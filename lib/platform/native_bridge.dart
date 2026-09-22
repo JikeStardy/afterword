@@ -1,0 +1,154 @@
+import 'package:flutter/services.dart';
+
+class SharedInput {
+  const SharedInput({
+    required this.id,
+    required this.text,
+    required this.paths,
+    this.error = '',
+  });
+
+  factory SharedInput.fromMap(Map<Object?, Object?> map) {
+    return SharedInput(
+      id: map['id'] as String? ?? '',
+      text: map['text'] as String? ?? '',
+      paths: ((map['paths'] as List<Object?>?) ?? const <Object?>[])
+          .whereType<String>()
+          .toList(growable: false),
+      error: map['error'] as String? ?? '',
+    );
+  }
+
+  final String id;
+  final String text;
+  final List<String> paths;
+  final String error;
+}
+
+class PdfPages {
+  const PdfPages({required this.pageCount, required this.images});
+
+  factory PdfPages.fromMap(Map<Object?, Object?> map) {
+    return PdfPages(
+      pageCount: map['pageCount'] as int? ?? 0,
+      images: ((map['images'] as List<Object?>?) ?? const <Object?>[])
+          .whereType<String>()
+          .toList(growable: false),
+    );
+  }
+
+  final int pageCount;
+  final List<String> images;
+}
+
+class NativeBridge {
+  const NativeBridge({
+    MethodChannel channel = const MethodChannel('readlater/native'),
+  }) : this._(channel);
+
+  const NativeBridge._(this._channel);
+
+  final MethodChannel _channel;
+
+  void setShareListener(void Function()? listener) {
+    if (listener == null) {
+      _channel.setMethodCallHandler(null);
+      return;
+    }
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'sharesReady') {
+        listener();
+      }
+    });
+  }
+
+  Future<List<SharedInput>> pendingShares() async {
+    try {
+      final rawShares = await _channel.invokeMethod<List<Object?>>(
+        'pendingShares',
+      );
+      return (rawShares ?? const <Object?>[])
+          .whereType<Map<Object?, Object?>>()
+          .map(SharedInput.fromMap)
+          .where((share) => share.id.isNotEmpty)
+          .toList(growable: false);
+    } on MissingPluginException {
+      return const <SharedInput>[];
+    }
+  }
+
+  Future<void> acknowledgeShare(String id) async {
+    try {
+      await _channel.invokeMethod<void>('acknowledgeShare', <String, Object?>{
+        'id': id,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<PdfPages> renderPdf(
+    String path, {
+    int startPage = 0,
+    int maxPages = 4,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'renderPdf',
+        <String, Object?>{
+          'path': path,
+          'startPage': startPage,
+          'maxPages': maxPages,
+        },
+      );
+      return PdfPages.fromMap(result ?? const <Object?, Object?>{});
+    } on MissingPluginException {
+      throw UnsupportedError(
+        'PDF rendering is not available on this platform.',
+      );
+    }
+  }
+
+  Future<void> notify(String title, String body) async {
+    try {
+      await _channel.invokeMethod<void>('notify', <String, Object?>{
+        'title': title,
+        'body': body,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> requestNotificationPermission() async {
+    try {
+      await _channel.invokeMethod<void>('requestNotificationPermission');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> openFile(String path) async {
+    try {
+      await _channel.invokeMethod<void>('openFile', <String, Object?>{
+        'path': path,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !['http', 'https'].contains(uri.scheme) ||
+        uri.host.isEmpty) {
+      throw const FormatException('仅支持打开 HTTP 或 HTTPS 来源链接');
+    }
+    try {
+      await _channel.invokeMethod<void>('openUrl', {'url': url});
+    } on MissingPluginException {
+      throw UnsupportedError('当前平台尚不支持打开来源链接');
+    }
+  }
+}
