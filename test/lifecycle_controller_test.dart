@@ -415,24 +415,21 @@ void main() {
       expect(controller.data.items.last.analysis!.summary, '新认识');
     },
   );
-  test(
-    'late failure from old analysis does not overwrite newer successful retry state',
-    () async {
-      controller.data.items.addAll([source('a'), source('b')]);
-      final old = Completer<Analysis>();
-      ai.pending = old;
-      final first = controller.analyze('b');
-      await Future<void>.delayed(Duration.zero);
-      await controller.archiveItems(['a']);
-      ai.pending = null;
-      await controller.analyze('b');
-      expect(controller.data.items.last.status, 'ready');
-      old.completeError(TimeoutException('late failure'));
-      await expectLater(first, throwsA(isA<DiagnosticCancelled>()));
-      expect(controller.data.items.last.status, 'ready');
-      expect(controller.data.items.last.analysis!.summary, '新认识');
-    },
-  );
+  test('late failure from old analysis does not overwrite newer successful retry state', () async {
+    controller.data.items.addAll([source('a'), source('b')]);
+    final old = Completer<Analysis>();
+    ai.pending = old;
+    final first = controller.analyze('b');
+    await Future<void>.delayed(Duration.zero);
+    await controller.archiveItems(['a']);
+    ai.pending = null;
+    await controller.analyze('b');
+    expect(controller.data.items.last.status, 'ready');
+    old.completeError(TimeoutException('late failure'));
+    await expectLater(first, throwsA(isA<DiagnosticCancelled>()));
+    expect(controller.data.items.last.status, 'ready');
+    expect(controller.data.items.last.analysis!.summary, '新认识');
+  });
   test('diagnostic source labels resolve existing research topics', () async {
     final topic = await controller.addTopic('知识管理', '如何积累认识？');
     expect(controller.sourceLabel(topic.id), '知识管理');

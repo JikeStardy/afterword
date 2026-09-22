@@ -534,72 +534,76 @@ void main() {
       },
     );
 
-    test('research records diagnostic timeline steps for every remote call', () async {
-      var searchCount = 0;
-      final service = IntelligenceService(
-        client: MockClient((request) async {
-          if (request.url.path == '/search') {
-            searchCount++;
-            return http.Response(
-              jsonEncode({
-                'results': [
-                  {
-                    'title': 'source $searchCount',
-                    'url': 'https://example.com/source-$searchCount',
-                    'content': 'evidence $searchCount',
-                  },
-                ],
-              }),
-              200,
-              headers: {'content-type': 'application/json; charset=utf-8'},
-            );
-          }
-          return completion({
-            'report': 'report [S1]',
-            'nextQuery': searchCount == 1 ? 'more evidence' : '',
-            'meaningful': true,
-          });
-        }),
-      );
-      final run = ResearchRun(id: 'r', goal: '笔记方法', callLimit: 4);
+    test(
+      'research records diagnostic timeline steps for every remote call',
+      () async {
+        var searchCount = 0;
+        final service = IntelligenceService(
+          client: MockClient((request) async {
+            if (request.url.path == '/search') {
+              searchCount++;
+              return http.Response(
+                jsonEncode({
+                  'results': [
+                    {
+                      'title': 'source $searchCount',
+                      'url': 'https://example.com/source-$searchCount',
+                      'content': 'evidence $searchCount',
+                    },
+                  ],
+                }),
+                200,
+                headers: {'content-type': 'application/json; charset=utf-8'},
+              );
+            }
+            return completion({
+              'report': 'report [S1]',
+              'nextQuery': searchCount == 1 ? 'more evidence' : '',
+              'meaningful': true,
+            });
+          }),
+        );
+        final run = ResearchRun(id: 'r', goal: '笔记方法', callLimit: 4);
 
-      await logs.runTask(
-        type: 'research',
-        title: 'research',
-        body: () => service.research(
-          AppSettings(textModel: 'm'),
-          'key',
-          'search-key',
-          run,
-          authorized: () => true,
-          onProgress: () async {},
-        ),
-      );
+        await logs.runTask(
+          type: 'research',
+          title: 'research',
+          body: () => service.research(
+            AppSettings(textModel: 'm'),
+            'key',
+            'search-key',
+            run,
+            authorized: () => true,
+            onProgress: () async {},
+          ),
+        );
 
-      final task = logs.tasks.single;
-      expect(task.status, 'succeeded');
-      expect(task.calls, hasLength(4));
-      expect(task.steps, hasLength(4));
-      expect(task.steps.map((step) => step.label), [
-        '检索：笔记方法',
-        '比较证据并检查研究缺口',
-        '检索：笔记方法\n补充查证（限定原主题）：more evidence',
-        '比较证据并检查研究缺口',
-      ]);
-      expect(task.steps.every((step) => step.status == 'succeeded'), isTrue);
-      expect(task.calls.map((call) => call.stepId), [
-        task.steps[0].id,
-        task.steps[1].id,
-        task.steps[2].id,
-        task.steps[3].id,
-      ]);
-      expect(
-        task.steps.every(
-          (step) => step.endedAt!.difference(step.startedAt).inMilliseconds >= 0,
-        ),
-        isTrue,
-      );
-    });
+        final task = logs.tasks.single;
+        expect(task.status, 'succeeded');
+        expect(task.calls, hasLength(4));
+        expect(task.steps, hasLength(4));
+        expect(task.steps.map((step) => step.label), [
+          '检索：笔记方法',
+          '比较证据并检查研究缺口',
+          '检索：笔记方法\n补充查证（限定原主题）：more evidence',
+          '比较证据并检查研究缺口',
+        ]);
+        expect(task.steps.every((step) => step.status == 'succeeded'), isTrue);
+        expect(task.calls.map((call) => call.stepId), [
+          task.steps[0].id,
+          task.steps[1].id,
+          task.steps[2].id,
+          task.steps[3].id,
+        ]);
+        expect(
+          task.steps.every(
+            (step) =>
+                step.endedAt!.difference(step.startedAt).inMilliseconds >= 0,
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('optional numeric or structured response ids never fail valid completions', () async {
       for (final id in [
