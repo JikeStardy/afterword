@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Re-enter under a command-line Git override to continuously test isolation.
+if [[ ${1:-} != --isolated-child ]]; then
+  GIT_CONFIG_PARAMETERS="'core.hooksPath'='outside-hooks'" bash "${BASH_SOURCE[0]}" --isolated-child
+  exit
+fi
+
 # Exercise real Git commits in disposable repositories, with an SDK adapter
 # that injects formatter/analyzer failures without running Flutter per case.
 project=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -26,7 +32,7 @@ chmod +x "$suite/sdk/"*
 export FLUTTER_BIN="$suite/sdk/flutter"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 # Hooks inherit Git's environment; never let an outer index/worktree leak in.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_COUNT || true
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS || true
 count=0
 
 new_repo() {
@@ -80,6 +86,12 @@ printf '\nDocumentation only.\n' >> "$repo/README.md"
 git -C "$repo" add README.md
 FLUTTER_BIN="$suite/no-sdk" git -C "$repo" commit -qm 'docs: no SDK required'
 echo 'PASS: documentation commit does not require Flutter'
+
+new_repo
+mkdir -p "$repo/docs"
+git -C "$repo" mv lib/main.dart docs/main.dart
+(export FLUTTER_BIN="$suite/no-sdk"; expect_blocked '找不到 Flutter')
+echo 'PASS: moving source into docs still requires source checks'
 
 for failure in FORMAT ANALYZE; do
   new_repo

@@ -40,6 +40,14 @@ if [[ "$mode" != fast ]]; then
   "$flutter" test --no-pub
 fi
 if [[ "$mode" == android ]]; then
-  "$flutter" build apk --no-pub --release --target-platform android-arm64
+  # Flutter must regenerate release plugin registrations after test tooling.
+  # --no-pub skips that step in the validated SDK; retain the locked versions.
+  lock_snapshot=$(mktemp "${TMPDIR:-/tmp}/readlater-lock.XXXXXX")
+  trap 'rm -f -- "$lock_snapshot"' EXIT
+  cp pubspec.lock "$lock_snapshot"
+  build_status=0
+  "$flutter" build apk --release --target-platform android-arm64 || build_status=$?
+  cmp -s pubspec.lock "$lock_snapshot" || fail '构建改变了 pubspec.lock；已停止，请审阅依赖变化，脚本不会自动恢复或提交。'
+  [[ "$build_status" == 0 ]] || exit "$build_status"
 fi
 printf '检查通过：%s\n' "$mode"

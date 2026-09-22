@@ -19,6 +19,8 @@ bash tool/check.sh full
 
 如果只配置了 `FLUTTER_BIN`，第一条命令使用 `"$FLUTTER_BIN" pub get --enforce-lockfile`。有完整本地包缓存时可额外使用 `--offline`。依赖解析失败应处理环境或明确的依赖变更，不删除锁文件凑出通过结果。
 
+首次 Android 构建仍可能下载 Gradle / Maven 产物及 sqlite3 原生库，`pub get --offline` 不等于完整离线构建。下载失败先检查网络与证书，保持 TLS 校验；若改用下载工具恢复缓存，必须依据锁定依赖的构建钩子验证其固定哈希，只写生成缓存，不复制另一项目的构建目录。
+
 钩子安装只设置仓库的 `core.hooksPath=.githooks`，可重复执行；已有其他 hooksPath 或默认钩子时会停止，保留原配置，需明确协调。Git 克隆不会自动启用钩子，每个新克隆都需执行安装命令。
 
 ## 分支、提交与合并
@@ -42,7 +44,7 @@ bash tool/check.sh full
 | `bash tool/check.sh android` | full、Android arm64 release APK 构建 | 平台相关改动、发布准备 |
 | `bash tool/test-git-hooks.sh` | 临时仓库中的真实 Git 提交行为 | 修改 Git 工具时单独运行 |
 
-默认模式为 `fast`。检查不自动执行依赖解析、不修改格式、不暂存、不 stash。Flutter 可更新自身缓存或构建产物；源码和暂存区不应被检查修改。
+默认模式为 `fast`。fast / full 使用已有依赖，不自动解析依赖、不修改格式、不暂存、不 stash。android 使用 Flutter 标准 release 构建流程，允许其依赖检查及平台插件注册文件生成，避免测试插件混入 release；前后核对 pubspec.lock，变化时明确失败并保留现场，不自动恢复或提交。Flutter 可更新缓存和构建产物；不应改变业务源码或暂存区。
 
 提交钩子总是检查暂存空白错误和禁止文件；只有 Markdown、`docs/` 文档或 LICENSE 变更时跳过 Flutter。其他变更采用保守策略运行 fast。
 

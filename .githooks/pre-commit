@@ -14,7 +14,7 @@ while IFS= read -r -d '' path; do
     *.md|docs/*|LICENSE|LICENSE.*) ;;
     *) requires_sdk=true ;;
   esac
-done < <(git diff --cached --name-only -z)
+done < <(git diff --cached --no-renames --name-only -z)
 
 # Deleting an accidentally committed private file must remain possible.
 while IFS= read -r -d '' path; do

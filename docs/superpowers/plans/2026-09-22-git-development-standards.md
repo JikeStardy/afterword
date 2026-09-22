@@ -12,7 +12,7 @@
 
 ## Task 3：规范与检查工具
 
-增加中文 CONTRIBUTING、AGENTS、编辑器配置和 README 入口。提供 check.sh fast/full/android、幂等 setup-dev.sh、本地 pre-commit 钩子。SDK 经 PATH 或 FLUTTER_BIN 定位，不硬编码机器路径；不得自动解析依赖、格式化、暂存或 stash。
+增加中文 CONTRIBUTING、AGENTS、编辑器配置和 README 入口。提供 check.sh fast/full/android、幂等 setup-dev.sh、本地 pre-commit 钩子。SDK 经 PATH 或 FLUTTER_BIN 定位，不硬编码机器路径；fast/full 不自动解析依赖，不自动格式化、暂存或 stash；Android 使用标准 release 生成流程并校验依赖锁文件未变化。
 
 钩子审查暂存空白和禁止文件，文档提交跳过 SDK；源码输入存在未暂存或未跟踪文件时阻止源码提交。保留已有 hooksPath 与默认钩子，不更改全局配置。
 
