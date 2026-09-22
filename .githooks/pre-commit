@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+fail() { printf '提交被阻止：%s\n' "$*" >&2; exit 1; }
+
+# These working files execute the gate or influence the ignored-file audit.
+gate_inputs=(.githooks tool .gitignore .gitattributes ':(glob)**/.gitignore')
+git diff --quiet -- "${gate_inputs[@]}" || fail '检查工具或忽略规则存在未暂存修改；请先整理暂存状态。'
+git diff --cached --check
+
+requires_sdk=false
+while IFS= read -r -d '' path; do
+  case "$path" in
+    *.md|docs/*|LICENSE|LICENSE.*) ;;
+    *) requires_sdk=true ;;
+  esac
+done < <(git diff --cached --name-only -z)
+
+# Deleting an accidentally committed private file must remain possible.
+while IFS= read -r -d '' path; do
+  basename=${path##*/}
+  case "/$path/" in
+    */dist/*|*/.omx/*|*/.superpowers/*|*/.worktrees/*|*/.dart_tool/*|*/.gradle/*|*/build/*|*/ephemeral/*)
+      fail "禁止入库的运行数据或构建产物：$path" ;;
+  esac
+  case "$basename" in
+    .env.example|.env.sample) ;;
+    .env|.env.*|key.properties|local.properties|credentials.json|secrets.json|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|*.sqlite|*.sqlite-*|*.sqlite3|*.sqlite3-*|*.db|*.db-*|*.apk|*.aab|*.zip|*.log|*.jsonl)
+      fail "禁止入库的私有文件或产物：$path" ;;
+  esac
+  if git check-ignore --no-index -q -- "$path"; then
+    fail "禁止入库：该文件命中了忽略规则（包括强制暂存）：$path"
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMRT -z)
+
+if [[ "$requires_sdk" == true ]]; then
+  inputs=(lib test integration_test test_driver android ios macos tool .githooks pubspec.yaml pubspec.lock analysis_options.yaml .gitignore .gitattributes .editorconfig)
+  git diff --quiet -- "${inputs[@]}" || fail '检查输入存在未暂存修改；请先整理暂存状态，不要让检查结果与提交内容不同。'
+  while IFS= read -r -d '' path; do
+    fail "检查输入存在未跟踪文件：${path}；请明确暂存或移出源码目录。"
+  done < <(git ls-files --others --exclude-standard -z -- "${inputs[@]}")
+  bash tool/check.sh fast
+else
+  echo '文档提交：暂存检查通过，无需 Flutter 检查。'
+fi

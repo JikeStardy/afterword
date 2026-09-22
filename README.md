@@ -2,6 +2,10 @@
 
 Android 个人研究资料库：收藏网页、文字、图片和 PDF，在本地保存原始资料，按个人关注点生成观点卡片与主题综述，再按授权开展外部研究。V2（0.2.0+2）加入归档、回收站和开发者日志，并统一为暖白、深绿的阅读与列表界面。
 
+## 开发协作
+
+开发流程、分支与提交、测试和发布规范见 [CONTRIBUTING.md](CONTRIBUTING.md)；AI 协作规则见 [AGENTS.md](AGENTS.md)。首次获取仓库运行 `flutter pub get --enforce-lockfile`、`bash tool/setup-dev.sh`，随后用 `bash tool/check.sh full` 验证。仅本地 Git，AI 可提交功能分支，合并 `main` 需用户明确发起。
+
 ## 开发环境
 
 - Flutter **3.47.5** / Dart **3.13.4**（依赖版本见 `pubspec.lock`）
