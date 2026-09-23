@@ -12,13 +12,45 @@ import 'package:xml/xml.dart' as xml;
 class ExtractedArticle {
   final String title, body, url;
   final List<String> imageUrls;
+  final int contentVersion;
+  final List<ExtractedContentBlock> contentBlocks;
 
   const ExtractedArticle({
     required this.title,
     required this.body,
     required this.url,
     required this.imageUrls,
+    this.contentVersion = 1,
+    this.contentBlocks = const <ExtractedContentBlock>[],
   });
+}
+
+class ExtractedContentBlock {
+  final String id, kind, text;
+  final int? level, page;
+  final String sourceContext, imageUrl, assetPath;
+
+  const ExtractedContentBlock({
+    required this.id,
+    required this.kind,
+    required this.text,
+    this.level,
+    this.page,
+    this.sourceContext = '',
+    this.imageUrl = '',
+    this.assetPath = '',
+  });
+
+  Json toJson() => {
+    'id': id,
+    'kind': kind,
+    'text': text,
+    if (level != null) 'level': level,
+    if (page != null) 'page': page,
+    if (sourceContext.isNotEmpty) 'sourceContext': sourceContext,
+    if (imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+    if (assetPath.isNotEmpty) 'assetPath': assetPath,
+  };
 }
 
 class ParsedFeed {
@@ -71,7 +103,14 @@ class ContentService {
     }
 
     final title = _articleTitle(document, root);
-    final body = _articleText(root);
+    final blocks = _articleBlocks(root, baseUri);
+    final body = blocks.isEmpty
+        ? _articleText(root)
+        : blocks
+              .where((block) => block.kind != 'image')
+              .map((block) => block.text)
+              .where((text) => text.trim().isNotEmpty)
+              .join('\n\n');
     if (_isBlockedOrEmpty(body)) {
       throw const FormatException('无法提取正文：页面为空或需要登录/验证');
     }
@@ -81,6 +120,7 @@ class ContentService {
       body: body,
       url: baseUri.toString(),
       imageUrls: _imageUrls(root, baseUri),
+      contentBlocks: blocks,
     );
   }
 
@@ -231,6 +271,78 @@ class ContentService {
       if (fallback.isNotEmpty) lines.add(fallback);
     }
     return lines.join('\n\n');
+  }
+
+  static List<ExtractedContentBlock> _articleBlocks(
+    dom.Element root,
+    Uri baseUri,
+  ) {
+    final blocks = <ExtractedContentBlock>[];
+    var index = 0;
+    final seen = <String>{};
+    for (final element in root.querySelectorAll(
+      'h1,h2,h3,h4,p,li,blockquote,pre,table,img',
+    )) {
+      final tag = element.localName?.toLowerCase() ?? '';
+      final kind = switch (tag) {
+        'h1' || 'h2' || 'h3' || 'h4' => 'heading',
+        'li' => 'list',
+        'blockquote' => 'quote',
+        'pre' => 'code',
+        'table' => 'table',
+        'img' => 'image',
+        _ => 'paragraph',
+      };
+      final imageUrl = tag == 'img'
+          ? _resolveHttpUrl(
+              element.attributes['data-src'] ??
+                  element.attributes['data-original'] ??
+                  element.attributes['src'],
+              baseUri,
+            )
+          : null;
+      final text = tag == 'table'
+          ? _tableText(element)
+          : (tag == 'img'
+                ? _clean(
+                    element.attributes['alt'] ??
+                        element.attributes['title'] ??
+                        imageUrl ??
+                        '',
+                  )
+                : _clean(element.text));
+      if (text.isEmpty && imageUrl == null) continue;
+      final dedupeKey = '$kind|$text|$imageUrl';
+      if (!seen.add(dedupeKey)) continue;
+      index++;
+      blocks.add(
+        ExtractedContentBlock(
+          id: 'b${_stableId('$index|$dedupeKey').substring(0, 10)}',
+          kind: kind,
+          text: text.isEmpty ? imageUrl! : text,
+          level: kind == 'heading'
+              ? int.tryParse(tag.replaceFirst('h', ''))
+              : null,
+          sourceContext: tag,
+          imageUrl: imageUrl ?? '',
+        ),
+      );
+    }
+    return blocks;
+  }
+
+  static String _tableText(dom.Element table) {
+    final rows = <String>[];
+    for (final row in table.querySelectorAll('tr')) {
+      final cells = row
+          .querySelectorAll('th,td')
+          .map((cell) => _clean(cell.text))
+          .where((text) => text.isNotEmpty)
+          .toList();
+      if (cells.isNotEmpty) rows.add(cells.join(' | '));
+    }
+    if (rows.isNotEmpty) return rows.join('\n');
+    return _clean(table.text);
   }
 
   static bool _isBlockedOrEmpty(String body) {

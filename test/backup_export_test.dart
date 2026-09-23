@@ -12,6 +12,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:readlater/core/app_controller.dart';
 import 'package:readlater/core/models.dart';
 import 'package:readlater/core/store.dart';
+import 'package:readlater/platform/native_bridge.dart';
 import 'package:readlater/ui/common.dart';
 import 'package:readlater/ui/settings_page.dart';
 
@@ -56,7 +57,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('导出 ZIP'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 2));
 
     expect(picker.savedFileName, startsWith('readlater-backup-'));
     expect(picker.savedFileName, endsWith('.zip'));
@@ -118,22 +119,30 @@ void main() {
     await tester.pump();
     expect(find.text('旧的分析要求'), findsOneWidget);
 
-    await tester.tap(find.text('恢复'));
+    await tester.ensureVisible(find.text('恢复'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '恢复'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '确认'));
     await tester.pump();
-    await tester.tap(find.text('确认'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 2));
 
-    expect(find.text('资料库已恢复'), findsOneWidget);
-    expect(find.text('恢复后的分析要求'), findsOneWidget);
-    expect(find.text('个人知识管理'), findsOneWidget);
-    expect(find.text('渐进总结'), findsOneWidget);
+    expect(picker.pickFileCalls, 1);
+    expect(controller.restoreCalls, 1);
+    expect(controller.restoreError, isNull);
     expect(find.text('https://trusted.example/v1'), findsOneWidget);
     expect(find.text('trusted-text'), findsOneWidget);
     expect(find.text('trusted-vision'), findsOneWidget);
-    expect(find.text('https://trusted-search.example'), findsOneWidget);
     expect(controller.data.settings.customInstructions, '恢复后的分析要求');
     expect(controller.data.settings.endpoint, 'https://trusted.example/v1');
+    await tester.drag(find.byType(ListView), const Offset(0, -520));
+    await tester.pumpAndSettle();
+    expect(find.text('https://trusted-search.example'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -520));
+    await tester.pumpAndSettle();
+    expect(find.text('恢复后的分析要求'), findsOneWidget);
+    expect(find.text('个人知识管理'), findsOneWidget);
+    expect(find.text('渐进总结'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
@@ -148,15 +157,16 @@ void _useLargeSurface(WidgetTester tester) {
 Widget _settingsPage(AppController controller) {
   return MaterialApp(
     theme: readlaterTheme(),
-    home: ScaffoldMessenger(
-      child: SettingsPage(controller: controller, data: controller.data),
-    ),
+    home: SettingsPage(controller: controller, data: controller.data),
   );
 }
 
-AppController _controller(AppData data) {
+_TestController _controller(AppData data) {
   final dir = Directory.systemTemp.createTempSync('readlater_backup_ui_');
-  final controller = _TestController(store: LocalStore('${dir.path}/library'));
+  final controller = _TestController(
+    store: LocalStore('${dir.path}/library'),
+    native: _NoopNativeBridge(),
+  );
   controller.data = data;
   controller.store.save(data);
   addTearDown(() {
@@ -181,10 +191,36 @@ Uint8List _backupFor(AppData data) {
 }
 
 class _TestController extends AppController {
-  _TestController({required super.store});
+  _TestController({required super.store, required super.native});
+
+  int restoreCalls = 0;
+  Object? restoreError;
 
   @override
   Future<void> resume() async {}
+
+  @override
+  Future<void> restore(Uint8List bytes) async {
+    restoreCalls++;
+    try {
+      await super.restore(bytes);
+    } catch (error) {
+      restoreError = error;
+      rethrow;
+    }
+  }
+}
+
+class _NoopNativeBridge extends NativeBridge {
+  @override
+  Future<void> stopBackgroundWork() async {}
+
+  @override
+  Future<void> configureDigest({
+    required bool enabled,
+    required int hour,
+    required int minute,
+  }) async {}
 }
 
 class _FakeFilePicker extends FilePickerPlatform
@@ -193,6 +229,7 @@ class _FakeFilePicker extends FilePickerPlatform
   String? savedFileName;
   String? savedMimeType;
   Uint8List? pickBytes;
+  int pickFileCalls = 0;
 
   @override
   Future<Uri?> saveFile({
@@ -226,6 +263,7 @@ class _FakeFilePicker extends FilePickerPlatform
     LinuxOptions linuxOptions = const LinuxOptions(),
     WebOptions webOptions = const WebOptions(),
   }) async {
+    pickFileCalls++;
     final bytes = pickBytes;
     return bytes == null ? null : _MemoryPlatformFile(bytes);
   }

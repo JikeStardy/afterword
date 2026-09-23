@@ -1,7 +1,11 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
 import '../core/models.dart';
+import '../services/knowledge_service.dart';
 import 'common.dart';
 import 'developer_page.dart';
 import 'item_detail.dart';
@@ -54,14 +58,21 @@ class TopicDetailPage extends StatelessWidget {
               ? null
               : () => runUiAction(
                   context,
-                  () => _synthesize(topic.id),
-                  success: '综述已更新',
+                  () => _queueSynthesis(topic.id),
+                  success: '综述更新已提交',
                 ),
+        ),
+        IconButton(
+          tooltip: '导出 Markdown',
+          icon: const Icon(Icons.download_outlined),
+          onPressed: () => _exportMarkdown(context, topic),
         ),
       ],
       child: ListView(
         children: [
           _OverviewCard(topic: topic, controller: controller),
+          _TopicContextCard(topic: topic, controller: controller),
+          _TopicScopeCard(topic: topic, controller: controller),
           if (topic.error.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -86,20 +97,27 @@ class TopicDetailPage extends StatelessWidget {
     );
   }
 
-  Future<void> _synthesize(String id) async {
-    await controller.synthesizeTopic(id);
-    final topic = controller.data.topics
-        .where((candidate) => candidate.id == id)
-        .firstOrNull;
-    if (topic == null) {
-      throw StateError('主题不存在');
-    }
-    if (topic.status == 'error' || topic.error.isNotEmpty) {
-      throw StateError(topic.error);
-    }
-    if (topic.status != 'ready') {
-      throw StateError('综述尚未完成');
-    }
+  Future<void> _queueSynthesis(String id) async {
+    await controller.queueSynthesis(id);
+  }
+
+  Future<void> _exportMarkdown(BuildContext context, Topic topic) async {
+    await runUiAction(context, () async {
+      final markdown = KnowledgeService.exportTopicMarkdown(
+        topic,
+        labelForSource: controller.sourceLabel,
+      );
+      final saved = await FilePicker.saveFile(
+        fileName: KnowledgeService.encodeMarkdownFileName(
+          topic.title,
+          topic.id,
+        ),
+        bytes: utf8.encode(markdown),
+        mimeType: 'text/markdown',
+        dialogTitle: '导出研究 Markdown',
+      );
+      if (saved == null) throw StateError('已取消导出');
+    }, success: 'Markdown 已导出');
   }
 
   List<ResearchRun> _topicRuns(String topicId) {
@@ -206,6 +224,10 @@ class _ResearchRunView extends StatelessWidget {
                 Text('开始：${shortDate(run.startedAt)}'),
                 if (run.completedAt != null)
                   Text('完成：${shortDate(run.completedAt)}'),
+                if (run.stale) ...[
+                  const SizedBox(height: 8),
+                  const StatusPill(label: '输入已变化，结果可能过时'),
+                ],
               ],
             ),
           ),
@@ -271,6 +293,8 @@ class _OverviewCard extends StatelessWidget {
                   topic.error,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
+              if (topic.toJson()['overviewStale'] == true)
+                const StatusPill(label: '结论需更新'),
             ],
           ),
           const SizedBox(height: 10),
@@ -288,8 +312,390 @@ class _OverviewCard extends StatelessWidget {
             const Divider(),
             Text('触发原因：${topic.reason}'),
           ],
+          if (topic.toJson()['reviewAt'] is String)
+            Text('复查：${topic.toJson()['reviewAt']}'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.event_repeat_outlined),
+                label: const Text('7 天后复查'),
+                onPressed: () => controller.setTopicReview(
+                  topic.id,
+                  DateTime.now().add(const Duration(days: 7)),
+                ),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.event_busy_outlined),
+                label: const Text('清除复查'),
+                onPressed: () => controller.setTopicReview(topic.id, null),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _TopicContextCard extends StatelessWidget {
+  const _TopicContextCard({required this.topic, required this.controller});
+
+  final Topic topic;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = KnowledgeService.contextEntriesForTopic(topic);
+    if (entries.isEmpty) {
+      return SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('暂无个人背景、判断或未解决问题'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('添加 context'),
+                  onPressed: () => _addContext(context),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.library_books_outlined),
+                  label: const Text('从资料/笔记加入'),
+                  onPressed: () => _importContext(context),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '个人 context',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: '从资料/笔记加入',
+                icon: const Icon(Icons.library_books_outlined),
+                onPressed: () => _importContext(context),
+              ),
+              IconButton(
+                tooltip: '添加 context',
+                icon: const Icon(Icons.add),
+                onPressed: () => _addContext(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final entry in entries)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_contextIcon(entry['kind'] as String? ?? '')),
+              title: Text(entry['text'] as String? ?? ''),
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) =>
+                    _handleEntryAction(context, entry, value),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                  PopupMenuItem(
+                    value: entry['confirmed'] == true ? 'unconfirm' : 'confirm',
+                    child: Text(entry['confirmed'] == true ? '标为待确认' : '标为已确认'),
+                  ),
+                  PopupMenuItem(
+                    value: entry['active'] == false ? 'restore' : 'disable',
+                    child: Text(entry['active'] == false ? '恢复使用' : '排除'),
+                  ),
+                ],
+              ),
+              subtitle: Wrap(
+                spacing: 8,
+                children: [
+                  Text(_contextLabel(entry['kind'] as String? ?? '')),
+                  Text(entry['confirmed'] == true ? '已确认' : '待确认'),
+                  if (entry['sourceId'] is String)
+                    Text('来源 ${entry['sourceId']}'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addContext(BuildContext context) async {
+    final input = await showContextEntryDialog(context);
+    if (input == null || !context.mounted) return;
+    await runUiAction(
+      context,
+      () => controller.addTopicContext(
+        topic.id,
+        kind: input.kind,
+        text: input.text,
+        confirmed: input.confirmed,
+      ),
+      success: 'Context 已保存',
+    );
+  }
+
+  Future<void> _importContext(BuildContext context) async {
+    final input = await showSourceContextPicker(context, controller.data.items);
+    if (input == null || !context.mounted) return;
+    await runUiAction(
+      context,
+      () => controller.addTopicContext(
+        topic.id,
+        kind: 'background',
+        text: input.text,
+        confirmed: true,
+        sourceId: input.sourceId,
+      ),
+      success: 'Context 已加入',
+    );
+  }
+
+  Future<void> _handleEntryAction(
+    BuildContext context,
+    Json entry,
+    String action,
+  ) async {
+    final id = entry['id'] as String? ?? '';
+    if (id.isEmpty) return;
+    if (action == 'edit') {
+      final input = await showContextEntryDialog(
+        context,
+        kind: entry['kind'] as String? ?? 'background',
+        text: entry['text'] as String? ?? '',
+        confirmed: entry['confirmed'] == true,
+      );
+      if (input == null || !context.mounted) return;
+      await runUiAction(
+        context,
+        () => controller.updateTopicContext(
+          topic.id,
+          id,
+          text: input.text,
+          kind: input.kind,
+          confirmed: input.confirmed,
+        ),
+        success: 'Context 已更新',
+      );
+      return;
+    }
+    await runUiAction(
+      context,
+      () => controller.updateTopicContext(
+        topic.id,
+        id,
+        confirmed: switch (action) {
+          'confirm' => true,
+          'unconfirm' => false,
+          _ => null,
+        },
+        active: switch (action) {
+          'restore' => true,
+          'disable' => false,
+          _ => null,
+        },
+      ),
+      success: 'Context 已更新',
+    );
+  }
+
+  IconData _contextIcon(String kind) => switch (kind) {
+    'goal' => Icons.flag_outlined,
+    'constraint' => Icons.rule_outlined,
+    'judgement' => Icons.psychology_alt_outlined,
+    'question' => Icons.help_outline,
+    _ => Icons.notes_outlined,
+  };
+
+  String _contextLabel(String kind) => switch (kind) {
+    'goal' => '目标',
+    'constraint' => '限制',
+    'judgement' => '个人判断',
+    'question' => '未解决问题',
+    _ => '背景',
+  };
+}
+
+class _TopicScopeCard extends StatelessWidget {
+  const _TopicScopeCard({required this.topic, required this.controller});
+
+  final Topic topic;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final sources = KnowledgeService.selectedSourceIdsForTopic(topic);
+    final contexts = KnowledgeService.selectedContextIdsForTopic(topic);
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '本轮范围',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.tune_outlined),
+                label: const Text('选择'),
+                onPressed: () => _editScope(context),
+              ),
+            ],
+          ),
+          if (sources == null && contexts == null)
+            const Text('自动选择可用资料与已确认 context')
+          else if (sources?.isEmpty == true)
+            const Text('资料：本轮明确不纳入资料'),
+          if (sources != null && sources.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('资料', style: Theme.of(context).textTheme.titleSmall),
+            for (final id in sources) Text('• ${controller.sourceLabel(id)}'),
+          ],
+          if (contexts != null && contexts.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('Context', style: Theme.of(context).textTheme.titleSmall),
+            for (final id in contexts) Text('• $id'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editScope(BuildContext context) async {
+    final result =
+        await showDialog<({List<String>? sources, List<String>? contexts})>(
+          context: context,
+          builder: (context) =>
+              _TopicScopeDialog(topic: topic, controller: controller),
+        );
+    if (result == null || !context.mounted) return;
+    await runUiAction(
+      context,
+      () => controller.updateTopicScope(
+        topic.id,
+        sourceIds: result.sources,
+        contextIds: result.contexts,
+      ),
+      success: '范围已更新',
+    );
+  }
+}
+
+class _TopicScopeDialog extends StatefulWidget {
+  const _TopicScopeDialog({required this.topic, required this.controller});
+
+  final Topic topic;
+  final AppController controller;
+
+  @override
+  State<_TopicScopeDialog> createState() => _TopicScopeDialogState();
+}
+
+class _TopicScopeDialogState extends State<_TopicScopeDialog> {
+  late bool _autoSources;
+  late Set<String> _sources;
+  late bool _autoContexts;
+  late Set<String> _contexts;
+
+  @override
+  void initState() {
+    super.initState();
+    final sourceIds = KnowledgeService.selectedSourceIdsForTopic(widget.topic);
+    final contextIds = KnowledgeService.selectedContextIdsForTopic(
+      widget.topic,
+    );
+    _autoSources = sourceIds == null;
+    _sources = (sourceIds ?? widget.topic.sourceIds).toSet();
+    _autoContexts = contextIds == null;
+    _contexts = (contextIds ?? <String>[]).toSet();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.controller.data.items
+        .where((item) => item.isActive)
+        .toList();
+    final contexts = KnowledgeService.contextEntriesForTopic(widget.topic);
+    return AlertDialog(
+      title: const Text('研究范围'),
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('自动选择资料'),
+            value: _autoSources,
+            onChanged: (value) => setState(() => _autoSources = value),
+          ),
+          if (!_autoSources)
+            for (final item in items)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _sources.contains(item.id),
+                title: Text(item.title),
+                onChanged: (value) => setState(() {
+                  if (value == true) {
+                    _sources.add(item.id);
+                  } else {
+                    _sources.remove(item.id);
+                  }
+                }),
+              ),
+          const Divider(),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('自动选择 context'),
+            value: _autoContexts,
+            onChanged: (value) => setState(() => _autoContexts = value),
+          ),
+          if (!_autoContexts)
+            for (final entry in contexts)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _contexts.contains(entry['id']),
+                title: Text(entry['text'] as String? ?? ''),
+                onChanged: (value) => setState(() {
+                  final id = entry['id'] as String? ?? '';
+                  if (value == true) {
+                    _contexts.add(id);
+                  } else {
+                    _contexts.remove(id);
+                  }
+                }),
+              ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, (
+            sources: _autoSources ? null : _sources.toList(),
+            contexts: _autoContexts ? null : _contexts.toList(),
+          )),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
@@ -386,7 +792,7 @@ class _TopicRunCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
-                '${run.sources.length} 个来源 · ${shortDate(run.completedAt ?? run.startedAt)}',
+                '${run.sources.length} 个来源 · ${shortDate(run.completedAt ?? run.startedAt)}${run.stale ? ' · 已过时' : ''}',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(

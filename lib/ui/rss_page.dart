@@ -5,20 +5,36 @@ import '../core/models.dart';
 import 'common.dart';
 import 'item_detail.dart';
 
-class RssPage extends StatelessWidget {
+class RssPage extends StatefulWidget {
   const RssPage({super.key, required this.controller, required this.data});
 
   final AppController controller;
   final AppData data;
 
   @override
+  State<RssPage> createState() => _RssPageState();
+}
+
+class _RssPageState extends State<RssPage> {
+  final Set<String> _selected = {};
+  bool _hideProcessed = true;
+
+  @override
   Widget build(BuildContext context) {
-    final entries = data.entries.toList()
-      ..sort((a, b) {
-        final left = a.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final right = b.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return right.compareTo(left);
-      });
+    final data = widget.data;
+    final controller = widget.controller;
+    _selected.removeWhere((id) => !data.entries.any((entry) => entry.id == id));
+    final entries =
+        data.entries
+            .where((entry) => !_hideProcessed || !entry.processed)
+            .toList()
+          ..sort((a, b) {
+            final left =
+                a.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final right =
+                b.publishedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return right.compareTo(left);
+          });
     return AppFrame(
       title: 'RSS',
       actions: [
@@ -47,11 +63,50 @@ class RssPage extends StatelessWidget {
             )
           : ListView(
               children: [
-                for (final feed in data.feeds) _FeedCard(feed: feed),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('隐藏已处理条目'),
+                    value: _hideProcessed,
+                    onChanged: (value) =>
+                        setState(() => _hideProcessed = value),
+                  ),
+                ),
+                for (final feed in data.feeds)
+                  _FeedCard(
+                    feed: feed,
+                    onPaused: (value) => runUiAction(
+                      context,
+                      () => controller.setFeedPaused(feed.id, value),
+                      success: value ? '订阅已暂停' : '订阅已恢复',
+                    ),
+                    onRemove: () => _removeFeed(context, feed),
+                  ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
                   child: Text('待挑选条目'),
                 ),
+                if (_selected.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          icon: const Icon(Icons.done_all),
+                          label: Text('标记 ${_selected.length} 条已处理'),
+                          onPressed: () => _processSelected(context, false),
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.block),
+                          label: const Text('批量跳过'),
+                          onPressed: () => _processSelected(context, true),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (entries.isEmpty)
                   const EmptyState(
                     icon: Icons.inbox_outlined,
@@ -61,6 +116,7 @@ class RssPage extends StatelessWidget {
                 for (final entry in entries)
                   _EntryCard(
                     entry: entry,
+                    selected: _selected.contains(entry.id),
                     feed: data.feeds
                         .where((feed) => feed.id == entry.feedId)
                         .firstOrNull,
@@ -90,6 +146,20 @@ class RssPage extends StatelessWidget {
                             success: '已保存并进入分析流程',
                           )
                         : null,
+                    onToggleSelected: (value) => setState(() {
+                      if (value) {
+                        _selected.add(entry.id);
+                      } else {
+                        _selected.remove(entry.id);
+                      }
+                    }),
+                    onSkip: entry.processed
+                        ? null
+                        : () => runUiAction(
+                            context,
+                            () => controller.processEntries([entry.id]),
+                            success: '条目已跳过',
+                          ),
                   ),
               ],
             ),
@@ -126,16 +196,58 @@ class RssPage extends StatelessWidget {
     }
     await runUiAction(
       context,
-      () => controller.addFeed(url.trim()),
+      () => widget.controller.addFeed(url.trim()),
       success: '订阅已添加',
+    );
+  }
+
+  Future<void> _processSelected(BuildContext context, bool skipped) async {
+    final ids = _selected.toList();
+    await runUiAction(
+      context,
+      () => widget.controller.processEntries(ids, skipped: skipped),
+      success: skipped ? '已批量跳过' : '已标记处理',
+    );
+    if (mounted) setState(_selected.clear);
+  }
+
+  Future<void> _removeFeed(BuildContext context, Feed feed) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('退订 RSS？'),
+        content: Text(feed.title.isEmpty ? feed.url : feed.title),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('退订'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await runUiAction(
+      context,
+      () => widget.controller.removeFeed(feed.id),
+      success: '订阅已移除',
     );
   }
 }
 
 class _FeedCard extends StatelessWidget {
-  const _FeedCard({required this.feed});
+  const _FeedCard({
+    required this.feed,
+    required this.onPaused,
+    required this.onRemove,
+  });
 
   final Feed feed;
+  final ValueChanged<bool> onPaused;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -146,8 +258,23 @@ class _FeedCard extends StatelessWidget {
         title: Text(feed.title.isEmpty ? feed.url : feed.title),
         subtitle: Text(
           feed.error.isEmpty
-              ? '上次刷新：${shortDate(feed.refreshedAt)}'
+              ? '${feed.paused ? '已暂停 · ' : ''}上次刷新：${shortDate(feed.refreshedAt)}'
               : feed.error,
+        ),
+        trailing: Wrap(
+          spacing: 4,
+          children: [
+            IconButton(
+              tooltip: feed.paused ? '恢复订阅' : '暂停订阅',
+              icon: Icon(feed.paused ? Icons.play_arrow : Icons.pause),
+              onPressed: () => onPaused(!feed.paused),
+            ),
+            IconButton(
+              tooltip: '退订',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: onRemove,
+            ),
+          ],
         ),
       ),
     );
@@ -161,6 +288,9 @@ class _EntryCard extends StatelessWidget {
     required this.onSelect,
     required this.onOpen,
     required this.savedItem,
+    required this.selected,
+    required this.onToggleSelected,
+    required this.onSkip,
   });
 
   final FeedEntry entry;
@@ -168,6 +298,9 @@ class _EntryCard extends StatelessWidget {
   final VoidCallback? onSelect;
   final VoidCallback onOpen;
   final LibraryItem? savedItem;
+  final bool selected;
+  final ValueChanged<bool> onToggleSelected;
+  final VoidCallback? onSkip;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +323,11 @@ class _EntryCard extends StatelessWidget {
             children: [
               StatusPill(
                 label: savedItem == null
-                    ? '未分析'
+                    ? entry.skipped
+                          ? '已跳过'
+                          : entry.processed
+                          ? '已处理'
+                          : '未分析'
                     : savedItem!.isTrashed
                     ? '回收站'
                     : savedItem!.isArchived
@@ -202,6 +339,12 @@ class _EntryCard extends StatelessWidget {
                 icon: const Icon(Icons.playlist_add_check),
                 label: Text(savedItem == null ? '选中处理' : '打开资料'),
                 onPressed: savedItem == null ? onSelect : onOpen,
+              ),
+              OutlinedButton(onPressed: onSkip, child: const Text('跳过')),
+              FilterChip(
+                label: const Text('批量选择'),
+                selected: selected,
+                onSelected: onToggleSelected,
               ),
             ],
           ),

@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
 import '../core/models.dart';
+import '../core/retrieval.dart';
 import 'common.dart';
 import 'item_detail.dart';
 import 'item_actions.dart';
+import 'research_detail.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key, required this.controller, required this.data});
@@ -39,19 +41,39 @@ class _LibraryPageState extends State<LibraryPage> {
       '异常' => ['failed', 'error', 'interrupted'].contains(item.status),
       _ => true,
     };
-    return _inScope(item) &&
-        matchesStatus &&
-        '${item.title} ${item.body} ${item.notes}'.toLowerCase().contains(
-          _query.trim().toLowerCase(),
-        );
+    return _inScope(item) && matchesStatus;
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = widget.data.items.where(_matches).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final trimmedQuery = _query.trim();
+    final hits = trimmedQuery.isEmpty
+        ? const <SearchHit>[]
+        : searchLibrary(widget.data, trimmedQuery, includeItem: _matches);
+    final itemHits = {
+      for (final hit in hits.where((h) => h.type == 'item')) hit.id: hit,
+    };
+    final items =
+        widget.data.items
+            .where(
+              (item) => trimmedQuery.isEmpty
+                  ? _matches(item)
+                  : itemHits.containsKey(item.id),
+            )
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (trimmedQuery.isNotEmpty) {
+      items.sort((a, b) {
+        final byScore = (itemHits[b.id]?.score ?? 0).compareTo(
+          itemHits[a.id]?.score ?? 0,
+        );
+        return byScore != 0 ? byScore : b.createdAt.compareTo(a.createdAt);
+      });
+    }
+    final knowledgeHits = hits.where((hit) => hit.type != 'item').toList();
     _selected.removeWhere((id) => !items.any((item) => item.id == id));
     final hasScopeItems = widget.data.items.any(_inScope);
+    final hasResults = items.isNotEmpty || knowledgeHits.isNotEmpty;
     return AppFrame(
       title: _selected.isEmpty ? '资料' : '已选 ${_selected.length} 项',
       actions: _selected.isNotEmpty
@@ -165,7 +187,7 @@ class _LibraryPageState extends State<LibraryPage> {
               ],
             ),
           ),
-          if (items.isEmpty)
+          if (!hasResults)
             SliverToBoxAdapter(
               child: EmptyState(
                 icon: hasScopeItems
@@ -219,9 +241,43 @@ class _LibraryPageState extends State<LibraryPage> {
                           controller: widget.controller,
                           items: [item],
                         ),
+                  snippet: trimmedQuery.isEmpty
+                      ? null
+                      : itemHits[item.id]?.snippet,
+                  controller: widget.controller,
                 );
               },
             ),
+          if (knowledgeHits.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
+                child: Text('研究与主题命中'),
+              ),
+            ),
+            SliverList.separated(
+              itemCount: knowledgeHits.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+              itemBuilder: (context, index) {
+                final hit = knowledgeHits[index];
+                return ListTile(
+                  leading: Icon(
+                    hit.type == 'topic'
+                        ? Icons.travel_explore_outlined
+                        : Icons.science_outlined,
+                  ),
+                  title: Text(hit.title),
+                  subtitle: Text(
+                    hit.snippet,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => _openHit(context, hit),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
@@ -311,6 +367,28 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
   }
+
+  void _openHit(BuildContext context, SearchHit hit) {
+    if (hit.type == 'topic') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              TopicDetailPage(controller: widget.controller, topicId: hit.id),
+        ),
+      );
+      return;
+    }
+    final run = widget.data.runs
+        .where((candidate) => candidate.id == hit.id)
+        .firstOrNull;
+    if (run == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ResearchRunPage(controller: widget.controller, runId: run.id),
+      ),
+    );
+  }
 }
 
 class _LibraryTile extends StatelessWidget {
@@ -321,11 +399,15 @@ class _LibraryTile extends StatelessWidget {
     required this.trailing,
     required this.selecting,
     required this.selected,
+    required this.controller,
+    this.snippet,
   });
   final LibraryItem item;
   final VoidCallback onTap, onLongPress;
   final Widget trailing;
   final bool selecting, selected;
+  final AppController controller;
+  final String? snippet;
   @override
   Widget build(BuildContext context) => Material(
     color: selected
@@ -352,7 +434,9 @@ class _LibraryTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    item.analysis?.summary.isNotEmpty == true
+                    snippet?.isNotEmpty == true
+                        ? snippet!
+                        : item.analysis?.summary.isNotEmpty == true
                         ? item.analysis!.summary
                         : (item.body.isEmpty ? item.url : item.body),
                     maxLines: 2,
@@ -375,6 +459,33 @@ class _LibraryTile extends StatelessWidget {
                         label: _libraryStatusLabel(item),
                         positive: item.analysis != null,
                       ),
+                      PopupMenuButton<WorkState>(
+                        tooltip: '处理状态',
+                        onSelected: (value) =>
+                            controller.setWorkState(item.id, value),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: WorkState.pending,
+                            child: Text('待判断'),
+                          ),
+                          PopupMenuItem(
+                            value: WorkState.reading,
+                            child: Text('阅读中'),
+                          ),
+                          PopupMenuItem(
+                            value: WorkState.done,
+                            child: Text('已处理'),
+                          ),
+                          PopupMenuItem(
+                            value: WorkState.snoozed,
+                            child: Text('搁置到明天'),
+                          ),
+                        ],
+                        child: StatusPill(
+                          label: _workStateLabel(item.workState),
+                          positive: item.workState == WorkState.done,
+                        ),
+                      ),
                       if (item.readCount == 0)
                         const Text('未读', style: TextStyle(fontSize: 12)),
                       Text(
@@ -393,6 +504,13 @@ class _LibraryTile extends StatelessWidget {
     ),
   );
 }
+
+String _workStateLabel(WorkState state) => switch (state) {
+  WorkState.pending => '待判断',
+  WorkState.reading => '阅读中',
+  WorkState.done => '已处理',
+  WorkState.snoozed => '搁置',
+};
 
 String _libraryStatusLabel(LibraryItem item) {
   return switch (item.status) {

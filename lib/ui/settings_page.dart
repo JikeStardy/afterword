@@ -79,6 +79,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
       child: ListView(
         children: [
+          _backupSection(context),
           SectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -203,6 +204,77 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('通知', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                _NotificationPermissionRow(controller: widget.controller),
+                const Divider(),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('每日汇总'),
+                  subtitle: Text(
+                    '本地时间 ${_two(widget.data.settings.digestHour)}:${_two(widget.data.settings.digestMinute)} 左右',
+                  ),
+                  value:
+                      widget.data.settings.digestEnabled &&
+                      widget.data.settings.digestNotifications,
+                  onChanged: (value) => runUiAction(
+                    context,
+                    () => widget.controller.updateNotificationSettings(
+                      digestEnabled: value,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.schedule),
+                  title: const Text('汇总时间'),
+                  subtitle: Text(
+                    '${_two(widget.data.settings.digestHour)}:${_two(widget.data.settings.digestMinute)}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _pickDigestTime(context),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('运行进度'),
+                  subtitle: const Text('前台服务仍会显示系统运行提示；关闭后只减少应用内进度通知。'),
+                  value: widget.data.settings.progressNotifications,
+                  onChanged: (value) => runUiAction(
+                    context,
+                    () => widget.controller.updateNotificationSettings(
+                      progress: value,
+                    ),
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('任务结果'),
+                  value: widget.data.settings.resultNotifications,
+                  onChanged: (value) => runUiAction(
+                    context,
+                    () => widget.controller.updateNotificationSettings(
+                      results: value,
+                    ),
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('研究提醒'),
+                  value: widget.data.settings.researchNotifications,
+                  onChanged: (value) => runUiAction(
+                    context,
+                    () => widget.controller.updateNotificationSettings(
+                      research: value,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SectionCard(
             child: ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.code_outlined),
@@ -212,35 +284,6 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () => openDiagnostics(context, widget.controller),
             ),
           ),
-          SectionCard(
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.inventory_2_outlined),
-                    const SizedBox(width: 12),
-                    const Expanded(child: Text('本地备份与恢复')),
-                    OutlinedButton(
-                      onPressed: () => _backup(context),
-                      child: const Text('导出 ZIP'),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                Row(
-                  children: [
-                    const Icon(Icons.restore_outlined),
-                    const SizedBox(width: 12),
-                    const Expanded(child: Text('从 ZIP 恢复资料库')),
-                    FilledButton(
-                      onPressed: () => _restore(context),
-                      child: const Text('恢复'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             child: FilledButton.icon(
@@ -248,6 +291,38 @@ class _SettingsPageState extends State<SettingsPage> {
               label: const Text('保存设置'),
               onPressed: () => _save(context),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _backupSection(BuildContext context) {
+    return SectionCard(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_outlined),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('本地备份与恢复')),
+              OutlinedButton(
+                onPressed: () => _backup(context),
+                child: const Text('导出 ZIP'),
+              ),
+            ],
+          ),
+          const Divider(),
+          Row(
+            children: [
+              const Icon(Icons.restore_outlined),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('从 ZIP 恢复资料库')),
+              FilledButton(
+                onPressed: () => _restore(context),
+                child: const Text('恢复'),
+              ),
+            ],
           ),
         ],
       ),
@@ -303,6 +378,25 @@ class _SettingsPageState extends State<SettingsPage> {
     await runUiAction(
       context,
       () => widget.controller.setTrashRetentionDays(days),
+    );
+  }
+
+  Future<void> _pickDigestTime(BuildContext context) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: widget.data.settings.digestHour,
+        minute: widget.data.settings.digestMinute,
+      ),
+    );
+    if (picked == null || !context.mounted) return;
+    await runUiAction(
+      context,
+      () => widget.controller.updateNotificationSettings(
+        hour: picked.hour,
+        minute: picked.minute,
+      ),
+      success: '每日汇总时间已更新',
     );
   }
 
@@ -385,5 +479,52 @@ class _SettingsPageState extends State<SettingsPage> {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
+  }
+
+  String _two(int value) => value.toString().padLeft(2, '0');
+}
+
+class _NotificationPermissionRow extends StatelessWidget {
+  const _NotificationPermissionRow({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final allowed = controller.notificationsAllowed;
+    final label = allowed == null
+        ? '未知'
+        : allowed
+        ? '已允许'
+        : '不可用';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        allowed == true
+            ? Icons.notifications_active_outlined
+            : Icons.notifications_off_outlined,
+      ),
+      title: Text('系统通知权限：$label'),
+      subtitle: const Text('拒绝权限不会阻止分析；完成后只是不弹出系统通知。'),
+      trailing: Wrap(
+        spacing: 8,
+        children: [
+          OutlinedButton(
+            onPressed: () => runUiAction(
+              context,
+              () => controller.refreshNotificationPermission(),
+            ),
+            child: const Text('刷新'),
+          ),
+          FilledButton(
+            onPressed: () => runUiAction(
+              context,
+              () => controller.refreshNotificationPermission(request: true),
+            ),
+            child: const Text('请求权限'),
+          ),
+        ],
+      ),
+    );
   }
 }

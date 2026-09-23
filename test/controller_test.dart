@@ -83,6 +83,7 @@ class CountingIntelligence extends IntelligenceService {
     required bool Function() authorized,
     required Future<void> Function() onProgress,
     String previousReport = '',
+    Json localContext = const {},
   }) async {
     if (!authorized()) throw StateError('unauthorized');
     researches++;
@@ -124,8 +125,17 @@ class NotificationNative extends NativeBridge {
   @override
   Future<void> requestNotificationPermission() async {}
   @override
-  Future<void> notify(String title, String body) async =>
-      notifications.add(body);
+  Future<bool> publishNotification({
+    required String id,
+    required String channel,
+    required String title,
+    required String body,
+    String? entityType,
+    String? entityId,
+  }) async {
+    notifications.add(body);
+    return true;
+  }
 }
 
 void main() {
@@ -212,6 +222,7 @@ void main() {
         callLimit: 2,
       );
       await controller.runDueTracking();
+      await controller.waitForIdle();
       expect(controller.data.runs.single.status, 'complete');
       expect(controller.data.runs.single.calls, 2);
       expect(controller.data.notices.length, scenario.meaningful ? 1 : 0);
@@ -219,11 +230,13 @@ void main() {
       expect(topic.lastRun, isNotNull);
       expect(topic.sourceIds, [controller.data.runs.single.id]);
       await controller.runDueTracking();
+      await controller.waitForIdle();
       expect(controller.data.runs.length, 1);
     });
   }
   test('unconfigured model never prevents saving original notes', () async {
     final item = await controller.captureText('我想保留的原文', notes: '关注适用条件');
+    await controller.waitForIdle();
     expect(item.body, '我想保留的原文');
     expect(item.status, 'waiting');
     expect(intelligence.analyses, 0);
@@ -242,6 +255,7 @@ void main() {
       );
       await controller.initialize();
       final item = await controller.captureUrl('https://example.com/article');
+      await controller.waitForIdle();
       expect(item.body, '这是一段需要保留的正文。');
       expect(item.warning, contains('1 张图片'));
       expect(item.assets, isEmpty);
@@ -284,6 +298,7 @@ void main() {
       );
       await controller.initialize();
       final item = await controller.captureText(List.filled(25001, '文').join());
+      await controller.waitForIdle();
       await controller.markRead(item.id);
       await controller.markRead(item.id);
       await controller.setFeedback(item.id, -1);
@@ -358,6 +373,7 @@ void main() {
       ),
     );
     final item = await controller.captureText('知识管理的新资料讨论适用条件');
+    await controller.waitForIdle();
     expect(item.status, 'ready');
     expect(item.analysis!.sourceIds, contains('r1'));
     await controller.synthesizeTopic(topic.id);
@@ -383,13 +399,14 @@ void main() {
     'restore makes interrupted analysis and synthesis retryable immediately',
     () async {
       final item = await controller.captureText('保留下来的原文');
+      await controller.waitForIdle();
       final topic = await controller.addTopic('知识管理', '怎样形成认识');
       item.status = 'analyzing';
       topic.status = 'synthesizing';
       controller.store.save(controller.data);
       final bytes = controller.store.backup();
       await controller.restore(bytes);
-      expect(controller.data.items.single.status, 'interrupted');
+      expect(controller.data.items.single.status, 'retryable');
       expect(controller.data.items.single.body, '保留下来的原文');
       expect(controller.data.topics.single.status, 'pending');
       expect(controller.store.load().topics.single.status, 'pending');
@@ -407,9 +424,11 @@ void main() {
       expect(controller.data.items, isEmpty);
       expect(intelligence.analyses, 0);
       await controller.selectEntry('e1');
+      await controller.waitForIdle();
       expect(controller.data.items.single.analysis!.summary, '认识');
       expect(intelligence.analyses, 1);
       await controller.selectEntry('e1');
+      await controller.waitForIdle();
       expect(controller.data.items.length, 1);
     },
   );
@@ -430,6 +449,7 @@ void main() {
         searchKey: 'search',
       );
       final item = await controller.captureText('研究知识管理');
+      await controller.waitForIdle();
       item.analysis!.questions = ['比较不同笔记方法'];
       await expectLater(
         controller.research(goal: '比较不同笔记方法', confirmed: false),
@@ -464,11 +484,14 @@ void main() {
       await controller.setTracking(topic.id, enabled: true, confirmed: true);
       topic.nextRun = DateTime.now().subtract(const Duration(days: 20));
       await controller.runDueTracking();
+      await controller.waitForIdle();
       await controller.runDueTracking();
+      await controller.waitForIdle();
       expect(intelligence.researches, 1);
       await controller.setTracking(topic.id, enabled: false, confirmed: false);
       topic.nextRun = DateTime.now().subtract(const Duration(days: 1));
       await controller.runDueTracking();
+      await controller.waitForIdle();
       expect(intelligence.researches, 1);
     },
   );
@@ -480,6 +503,7 @@ void main() {
       );
       expect(controller.data.settings.explicitInterests, ['反例']);
       final item = await controller.captureText('与工具相关');
+      await controller.waitForIdle();
       await controller.markRead(item.id);
       expect(controller.data.settings.explicitInterests, ['反例']);
     },
@@ -546,13 +570,46 @@ void main() {
     await controller.saveSettings(AppSettings(textModel: 'm'), apiKey: 'key');
     intelligence.suggestions = ['工具'];
     await controller.captureText('工具的用途');
+    await controller.waitForIdle();
     expect(controller.data.settings.inferredInterests, contains('工具'));
     final edited = AppSettings.fromJson(controller.data.settings.toJson());
     edited.inferredInterests.clear();
     await controller.saveSettings(edited);
     await controller.captureText('更多工具资料');
+    await controller.waitForIdle();
     expect(controller.data.settings.inferredInterests, isNot(contains('工具')));
   });
+
+  test(
+    'cancelled share keeps original input without requeueing analysis',
+    () async {
+      controller.dispose();
+      final native = QueueNative()
+        ..queue.add(
+          const SharedInput(
+            id: 'cancelled',
+            text: '保留原文',
+            paths: [],
+            cancelled: true,
+          ),
+        );
+      controller = AppController(
+        store: LocalStore(dir.path),
+        native: native,
+        intelligence: intelligence,
+        secrets: TestSecrets(),
+      );
+      await controller.initialize();
+      await controller.saveSettings(AppSettings(textModel: 'm'), apiKey: 'key');
+      await controller.resume();
+      await controller.waitForIdle();
+      expect(controller.data.items.single.body, '保留原文');
+      expect(controller.data.items.single.status, 'retryable');
+      expect(controller.runtime.jobs, isEmpty);
+      expect(intelligence.analyses, 0);
+      expect(native.queue, isEmpty);
+    },
+  );
 
   test('native share completed during a drain is processed without waiting for next resume', () async {
     controller.dispose();

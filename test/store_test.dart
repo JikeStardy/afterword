@@ -45,6 +45,27 @@ void main() {
               title: '图',
               kind: ItemKind.image,
               assets: [asset],
+              contentBlocks: [
+                ContentBlock(
+                  id: 'image',
+                  kind: ContentBlockKind.image,
+                  assetId: asset.path,
+                ),
+              ],
+              contentHistory: [
+                ContentRevision(
+                  version: 1,
+                  title: '旧正文',
+                  body: '',
+                  blocks: [
+                    ContentBlock(
+                      id: 'old-image',
+                      kind: ContentBlockKind.image,
+                      assetId: asset.path,
+                    ),
+                  ],
+                ),
+              ],
               analysis: Analysis(summary: '观点', sourceIds: ['i1']),
             ),
           ],
@@ -61,6 +82,11 @@ void main() {
           [1, 2, 3],
         );
         expect(item.analysis!.sourceIds, ['i1']);
+        expect(item.contentBlocks.single.assetId, item.assets.single.path);
+        expect(
+          item.contentHistory.single.blocks.single.assetId,
+          item.assets.single.path,
+        );
       } finally {
         destination.close();
         other.deleteSync(recursive: true);
@@ -153,6 +179,144 @@ void main() {
         ),
       );
       expect(() => store.backup(), throwsFormatException);
+    },
+  );
+  test('runtime state is saved atomically with the app snapshot', () {
+    store.save(AppData());
+    final runtime = RuntimeState(
+      epoch: 1,
+      jobs: [
+        BackgroundJob(
+          id: 'job1',
+          type: 'analyzeItem',
+          entityId: 'i1',
+          status: 'running',
+          stage: 'fetch',
+          checkpoint: {'step': 1},
+          createdAt: DateTime.utc(2026, 9, 22),
+        ),
+      ],
+      outbox: [
+        PendingNotification(
+          id: 'n1',
+          channel: 'results',
+          title: '完成',
+          body: '完成',
+          entityType: 'item',
+          entityId: 'i1',
+          createdAt: DateTime.utc(2026, 9, 22),
+        ),
+      ],
+    );
+
+    store.saveWithRuntime(
+      AppData(
+        items: [LibraryItem(id: 'i1', title: '文章', kind: ItemKind.text)],
+      ),
+      runtime,
+    );
+
+    expect(store.load().items.single.id, 'i1');
+    expect(store.loadRuntime().jobs.single.stage, 'fetch');
+    expect(store.loadRuntime().outbox.single.id, 'n1');
+  });
+
+  test('failed combined save rolls back both snapshot and runtime state', () {
+    store.saveWithRuntime(
+      AppData(
+        items: [LibraryItem(id: 'keep', title: 'keep', kind: ItemKind.text)],
+      ),
+      RuntimeState(epoch: 7),
+    );
+
+    expect(
+      () => store.saveWithRuntime(
+        AppData(
+          items: [LibraryItem(id: 'bad', title: 'bad', kind: ItemKind.text)],
+        ),
+        RuntimeState(
+          epoch: 8,
+          jobs: [
+            BackgroundJob(
+              id: 'bad',
+              type: 'analyzeItem',
+              entityId: 'bad',
+              status: 'running',
+              stage: 'bad',
+              checkpoint: {'invalid': Object()},
+              createdAt: DateTime.utc(2026, 9, 22),
+            ),
+          ],
+        ),
+      ),
+      throwsA(anything),
+    );
+
+    expect(store.load().items.single.id, 'keep');
+    expect(store.loadRuntime().epoch, 7);
+  });
+
+  test(
+    'backup excludes runtime queue and restore clears runtime with a new epoch',
+    () {
+      store.saveWithRuntime(
+        AppData(
+          items: [
+            LibraryItem(
+              id: 'i1',
+              title: '文章',
+              kind: ItemKind.text,
+              status: 'analyzing',
+            ),
+          ],
+        ),
+        RuntimeState(
+          epoch: 5,
+          jobs: [
+            BackgroundJob(
+              id: 'job1',
+              type: 'analyzeItem',
+              entityId: 'i1',
+              status: 'running',
+              stage: 'model',
+              createdAt: DateTime.utc(2026, 9, 22),
+            ),
+          ],
+          outbox: [
+            PendingNotification(
+              id: 'n1',
+              channel: 'progress',
+              title: '运行中',
+              body: '运行中',
+              entityType: 'item',
+              entityId: 'i1',
+              createdAt: DateTime.utc(2026, 9, 22),
+            ),
+          ],
+        ),
+      );
+
+      final manifest = ZipDecoder()
+          .decodeBytes(store.backup())
+          .findFile('manifest.json')!;
+      final decoded = jsonDecode(utf8.decode(manifest.content)) as Map;
+      expect(decoded.containsKey('runtime'), isFalse);
+
+      final other = Directory.systemTemp.createTempSync(
+        'readlater-restore-runtime-',
+      );
+      final destination = LocalStore(other.path);
+      try {
+        destination.saveWithRuntime(AppData(), RuntimeState(epoch: 9));
+        destination.restore(store.backup());
+        expect(destination.loadRuntime().epoch, 10);
+        expect(destination.loadRuntime().jobs, isEmpty);
+        expect(destination.loadRuntime().outbox, isEmpty);
+        expect(destination.load().items.single.status, 'retryable');
+      } finally {
+        destination.close();
+        other.deleteSync(recursive: true);
+      }
     },
   );
 }

@@ -30,6 +30,7 @@ void main() {
                 'text': 'https://example.com/post',
                 'paths': <String>['/private/share/image.jpg'],
                 'error': 'image import failed',
+                'cancelled': true,
               },
             ];
           }
@@ -46,6 +47,7 @@ void main() {
     expect(shares.single.text, 'https://example.com/post');
     expect(shares.single.paths, <String>['/private/share/image.jpg']);
     expect(shares.single.error, 'image import failed');
+    expect(shares.single.cancelled, isTrue);
     expect(calls.last.method, 'acknowledgeShare');
     expect(calls.last.arguments, <String, Object?>{'id': 'share-1'});
   });
@@ -81,9 +83,11 @@ void main() {
 
   test('notifies listener when native side reports shares ready', () async {
     var readyEvents = 0;
+    final runtimeEvents = <NativeRuntimeEvent>[];
     bridge.setShareListener(() {
       readyEvents += 1;
     });
+    bridge.setRuntimeEventListener(runtimeEvents.add);
 
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
@@ -92,7 +96,167 @@ void main() {
           (_) {},
         );
 
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          'readlater/native',
+          channel.codec.encodeMethodCall(
+            const MethodCall('runtimeEvent', <String, Object?>{
+              'kind': 'openEntity',
+              'entityType': 'item',
+              'entityId': 'item-1',
+            }),
+          ),
+          (_) {},
+        );
+
     expect(readyEvents, 1);
+    expect(runtimeEvents.single.kind, 'openEntity');
+    expect(runtimeEvents.single.entityType, 'item');
+    expect(runtimeEvents.single.entityId, 'item-1');
+  });
+
+  test('reads runtime context and sends background commands', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'runtimeContext') {
+            return <String, Object?>{
+              'mode': 'digestOnly',
+              'openedEntityType': 'research',
+              'openedEntityId': 'run-1',
+              'launchedFromNotification': true,
+              'recentEvents': <Map<String, Object?>>[
+                <String, Object?>{'kind': 'interactive'},
+                <String, Object?>{
+                  'kind': 'openEntity',
+                  'entityType': 'today',
+                  'entityId': '',
+                },
+              ],
+            };
+          }
+          if (call.method == 'notificationStatus') {
+            return true;
+          }
+          if (call.method == 'publishNotification') {
+            return true;
+          }
+          return null;
+        });
+
+    final context = await bridge.runtimeContext();
+    await bridge.startBackgroundWork();
+    await bridge.updateBackgroundProgress(
+      jobId: 'job-1',
+      title: '分析资料',
+      stage: 'PDF 2/4',
+      completed: 2,
+      total: 4,
+    );
+    await bridge.stopBackgroundWork();
+    await bridge.configureDigest(enabled: true, hour: 20, minute: 15);
+    final notificationsAllowed = await bridge.notificationStatus();
+    final notificationPublished = await bridge.publishNotification(
+      id: 'digest-2026-09-22',
+      channel: 'digest',
+      title: '今日推荐',
+      body: '有 3 条值得读',
+      entityType: 'today',
+      entityId: '2026-09-22',
+    );
+    await bridge.finishDigest();
+
+    expect(context.mode, 'digestOnly');
+    expect(context.openedEntityType, 'research');
+    expect(context.openedEntityId, 'run-1');
+    expect(context.launchedFromNotification, isTrue);
+    expect(context.recentEvents.map((event) => event.kind), <String>[
+      'interactive',
+      'openEntity',
+    ]);
+    expect(context.recentEvents.last.entityType, 'today');
+    expect(context.recentEvents.last.entityId, '');
+    expect(notificationsAllowed, isTrue);
+    expect(notificationPublished, isTrue);
+    expect(calls.map((call) => call.method), <String>[
+      'runtimeContext',
+      'startBackgroundWork',
+      'updateBackgroundProgress',
+      'stopBackgroundWork',
+      'configureDigest',
+      'notificationStatus',
+      'publishNotification',
+      'finishDigest',
+    ]);
+    expect(calls[2].arguments, <String, Object?>{
+      'jobId': 'job-1',
+      'title': '分析资料',
+      'stage': 'PDF 2/4',
+      'completed': 2,
+      'total': 4,
+    });
+    expect(calls[4].arguments, <String, Object?>{
+      'enabled': true,
+      'hour': 20,
+      'minute': 15,
+    });
+    expect(calls[6].arguments, <String, Object?>{
+      'id': 'digest-2026-09-22',
+      'channel': 'digest',
+      'title': '今日推荐',
+      'body': '有 3 条值得读',
+      'entityType': 'today',
+      'entityId': '2026-09-22',
+    });
+
+    await bridge.publishNotification(
+      id: 'digest-today',
+      channel: 'digest',
+      title: '今日推荐',
+      body: '有 2 条值得读',
+      entityType: 'today',
+    );
+    expect(calls.last.arguments, <String, Object?>{
+      'id': 'digest-today',
+      'channel': 'digest',
+      'title': '今日推荐',
+      'body': '有 2 条值得读',
+      'entityType': 'today',
+      'entityId': null,
+    });
+  });
+
+  test('keeps runtime listeners scoped to bridge instances', () async {
+    const firstChannel = MethodChannel('readlater/native/first');
+    const secondChannel = MethodChannel('readlater/native/second');
+    const firstBridge = NativeBridge(channel: firstChannel);
+    const secondBridge = NativeBridge(channel: secondChannel);
+    var firstShares = 0;
+    var secondShares = 0;
+
+    firstBridge.setShareListener(() => firstShares += 1);
+    secondBridge.setShareListener(() => secondShares += 1);
+
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          'readlater/native/first',
+          firstChannel.codec.encodeMethodCall(const MethodCall('sharesReady')),
+          (_) {},
+        );
+
+    expect(firstShares, 1);
+    expect(secondShares, 0);
+
+    firstBridge.setShareListener(null);
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          'readlater/native/second',
+          secondChannel.codec.encodeMethodCall(const MethodCall('sharesReady')),
+          (_) {},
+        );
+
+    expect(firstShares, 1);
+    expect(secondShares, 1);
   });
 
   test('renders a bounded pdf page batch through the native channel', () async {

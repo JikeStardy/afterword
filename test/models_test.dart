@@ -56,4 +56,228 @@ void main() {
   test('unknown backup schema is rejected instead of silently losing data', () {
     expect(() => AppData.fromJson({'version': 999}), throwsFormatException);
   });
+
+  test(
+    'topic scope preserves automatic null separately from explicit empty',
+    () {
+      final automatic = Topic(id: 'auto', title: '自动', question: '问题');
+      final explicitEmpty = Topic(
+        id: 'empty',
+        title: '空范围',
+        question: '问题',
+        selectedSourceIds: [],
+        selectedContextIds: [],
+      );
+
+      final copy = AppData.fromJson(
+        AppData(topics: [automatic, explicitEmpty]).toJson(),
+      );
+
+      expect(copy.topics[0].selectedSourceIds, isNull);
+      expect(copy.topics[0].selectedContextIds, isNull);
+      expect(copy.topics[1].selectedSourceIds, isEmpty);
+      expect(copy.topics[1].selectedContextIds, isEmpty);
+    },
+  );
+
+  test('v3 snapshot round trips work state, structured content and insight anchors', () {
+    final data = AppData(
+      items: [
+        LibraryItem(
+          id: 'i1',
+          title: '结构化文章',
+          kind: ItemKind.text,
+          readCount: 9,
+          workState: WorkState.snoozed,
+          snoozedUntil: DateTime.utc(2026, 9, 23),
+          contentVersion: 2,
+          contentBlocks: [
+            ContentBlock(
+              id: 'b1',
+              kind: ContentBlockKind.heading,
+              text: '标题',
+              level: 2,
+            ),
+            ContentBlock(
+              id: 'b2',
+              kind: ContentBlockKind.paragraph,
+              text: '正文',
+            ),
+          ],
+          readingPosition: ReadingPosition(blockId: 'b2', offset: 3),
+          readerFontScale: 1.3,
+          annotations: [
+            Annotation(
+              id: 'a1',
+              anchor: EvidenceAnchor(
+                sourceId: 'i1',
+                sourceVersion: 2,
+                blockId: 'b2',
+                start: 0,
+                end: 2,
+                quote: '正文',
+              ),
+              note: '批注',
+            ),
+          ],
+          analysis: Analysis(
+            summary: '总结',
+            insights: ['旧 insight'],
+            sourceIds: ['i1'],
+            structuredInsights: [
+              Insight(
+                id: 's1',
+                finding: '新发现',
+                change: '改变了旧认识',
+                impact: '影响个人决策',
+                evidence: [
+                  EvidenceAnchor(
+                    sourceId: 'i1',
+                    sourceVersion: 2,
+                    blockId: 'b2',
+                    quote: '正文',
+                  ),
+                ],
+                unknowns: ['仍未知'],
+                verdict: 'doubt',
+                stale: true,
+              ),
+            ],
+          ),
+        ),
+      ],
+      topics: [
+        Topic(
+          id: 't1',
+          title: '主题',
+          question: '问题',
+          selectedSourceIds: [],
+          selectedContextIds: ['c1'],
+          contextEntries: [
+            ContextEntry(
+              id: 'c1',
+              kind: 'judgement',
+              text: '个人判断',
+              confirmed: true,
+              sourceId: 'i1',
+              sourceVersion: 2,
+              updatedAt: DateTime.utc(2026, 9, 22),
+            ),
+          ],
+          overviewStale: true,
+          reviewAt: DateTime.utc(2026, 10),
+        ),
+      ],
+      todaySnapshots: [
+        TodaySnapshot(
+          day: '2026-09-22',
+          entries: [
+            TodayEntry(
+              id: 'te1',
+              entityType: 'item',
+              entityId: 'i1',
+              reason: '到期复查',
+              relatedIds: ['t1'],
+            ),
+          ],
+          skippedIds: ['old'],
+          deferredUntil: {'later': DateTime.utc(2026, 9, 24)},
+        ),
+      ],
+    );
+
+    final copy = AppData.fromJson(data.toJson());
+    expect(copy.toJson()['version'], 3);
+    expect(copy.items.single.workState, WorkState.snoozed);
+    expect(copy.items.single.readCount, 9);
+    expect(
+      copy.items.single.contentBlocks.first.kind,
+      ContentBlockKind.heading,
+    );
+    expect(copy.items.single.annotations.single.anchor.blockId, 'b2');
+    expect(copy.items.single.analysis!.structuredInsights.single.stale, isTrue);
+    expect(copy.topics.single.selectedSourceIds, isEmpty);
+    expect(copy.topics.single.contextEntries.single.confirmed, isTrue);
+    expect(
+      copy.todaySnapshots.single.deferredUntil['later'],
+      DateTime.utc(2026, 9, 24),
+    );
+  });
+
+  test(
+    'v1 and v2 snapshots migrate without inferring completion from read count',
+    () {
+      final migrated = AppData.fromJson({
+        'version': 1,
+        'items': [
+          {
+            'id': 'i1',
+            'title': '旧文章',
+            'kind': 'text',
+            'readCount': 12,
+            'status': 'ready',
+          },
+        ],
+      });
+
+      expect(migrated.items.single.readCount, 12);
+      expect(migrated.items.single.workState, WorkState.pending);
+      expect(migrated.toJson()['version'], 3);
+    },
+  );
+
+  test('runtime state round trips durable jobs and notification outbox', () {
+    final runtime = RuntimeState(
+      epoch: 3,
+      jobs: [
+        BackgroundJob(
+          id: 'job1',
+          type: 'analyzeItem',
+          entityId: 'i1',
+          status: 'running',
+          stage: 'chunking',
+          checkpoint: {'block': 2},
+          epoch: 3,
+          attempts: 1,
+          createdAt: DateTime.utc(2026, 9, 22),
+          error: 'possible duplicate billing',
+        ),
+      ],
+      outbox: [
+        PendingNotification(
+          id: 'n1',
+          channel: 'results',
+          title: '完成',
+          body: '分析完成',
+          entityType: 'item',
+          entityId: 'i1',
+          createdAt: DateTime.utc(2026, 9, 22),
+        ),
+      ],
+    );
+
+    final copy = RuntimeState.fromJson(runtime.toJson());
+    expect(copy.epoch, 3);
+    expect(copy.jobs.single.checkpoint['block'], 2);
+    expect(copy.outbox.single.channel, 'results');
+  });
+
+  test('research run round trips durable stage checkpoint', () {
+    final run = ResearchRun(
+      id: 'r',
+      goal: '问题',
+      calls: 3,
+      callLimit: 4,
+      pendingStage: 'compare',
+      pendingQuery: '问题\n补充查证：证据',
+      requestPending: true,
+    );
+
+    final copy = ResearchRun.fromJson(run.toJson());
+    expect(copy.pendingStage, 'compare');
+    expect(copy.pendingQuery, contains('补充查证'));
+    expect(copy.requestPending, isTrue);
+    expect(copy.calls, 3);
+    expect(copy.callLimit, 4);
+  });
 }

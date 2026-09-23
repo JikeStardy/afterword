@@ -29,6 +29,9 @@ class LocalStore {
     _database.execute(
       'CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL)',
     );
+    _database.execute(
+      'CREATE TABLE IF NOT EXISTS runtime_state (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL)',
+    );
   }
   AppData load() {
     final rows = _database.select('SELECT data FROM app_state WHERE id=1');
@@ -38,7 +41,40 @@ class LocalStore {
   }
 
   void save(AppData data) {
+    _saveAppState(data);
+  }
+
+  RuntimeState loadRuntime() {
+    final rows = _database.select('SELECT data FROM runtime_state WHERE id=1');
+    return rows.isEmpty
+        ? RuntimeState()
+        : RuntimeState.fromJson(
+            json(jsonDecode(rows.single['data'] as String)),
+          );
+  }
+
+  void saveWithRuntime(AppData data, RuntimeState runtime) {
     final payload = jsonEncode(data.toJson());
+    final runtimePayload = jsonEncode(runtime.toJson());
+    _database.execute('BEGIN IMMEDIATE');
+    try {
+      _writeAppPayload(payload);
+      _database.execute(
+        'INSERT INTO runtime_state(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
+        [runtimePayload],
+      );
+      _database.execute('COMMIT');
+    } catch (_) {
+      _database.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
+  void _saveAppState(AppData data) {
+    _writeAppPayload(jsonEncode(data.toJson()));
+  }
+
+  void _writeAppPayload(String payload) {
     _database.execute(
       'INSERT INTO app_state(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
       [payload],
@@ -176,6 +212,16 @@ class LocalStore {
           asset.path = mapping[original]!;
         }
       }
+      for (final item in restored.items) {
+        for (final block in [
+          ...item.contentBlocks,
+          for (final revision in item.contentHistory) ...revision.blocks,
+        ]) {
+          if (mapping.containsKey(block.assetId)) {
+            block.assetId = mapping[block.assetId]!;
+          }
+        }
+      }
       // Imported tracking grants are not silently renewed on another device.
       for (final topic in restored.topics) {
         topic.tracking = false;
@@ -188,12 +234,29 @@ class LocalStore {
       restored.settings.visionModel = device.visionModel;
       restored.settings.searchEndpoint = device.searchEndpoint;
       restored.settings.debugModelLogging = false;
-      save(restored);
+      _prepareRestoredOperationalState(restored);
+      saveWithRuntime(restored, RuntimeState(epoch: loadRuntime().epoch + 1));
     } catch (_) {
       for (final file in created) {
         if (file.existsSync()) file.deleteSync();
       }
       rethrow;
+    }
+  }
+
+  void _prepareRestoredOperationalState(AppData data) {
+    for (final item in data.items) {
+      if (['analyzing', 'pending', 'waiting'].contains(item.status)) {
+        item.status = 'retryable';
+      }
+    }
+    for (final topic in data.topics) {
+      if (['running', 'synthesizing', 'waiting'].contains(topic.status)) {
+        topic.status = 'pending';
+      }
+    }
+    for (final run in data.runs) {
+      if (run.status == 'running') run.status = 'interrupted';
     }
   }
 

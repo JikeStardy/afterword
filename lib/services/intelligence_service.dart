@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/models.dart';
 import '../core/diagnostics.dart';
+import 'knowledge_service.dart';
 
 class IntelligenceService {
   final http.Client client;
@@ -230,10 +231,8 @@ class IntelligenceService {
     final input = {
       'preferences': preferences(settings),
       'item': {
-        'id': item.id,
-        'title': item.title,
+        ...KnowledgeService.itemPayload(item),
         'content': item.body,
-        'notes': item.notes,
         'feedback': item.feedback,
         'attentionNotAgreement': {
           'reads': item.readCount,
@@ -243,9 +242,9 @@ class IntelligenceService {
       'related': related
           .map(
             (r) => {
-              'id': r.id,
-              'title': r.title,
+              ...KnowledgeService.itemPayload(r, clipChars: 4000),
               'content': r.analysis?.summary ?? _clip(r.body, 4000),
+              'notes': r.notes,
               'feedback': r.feedback,
               'attentionNotAgreement': {
                 'reads': r.readCount,
@@ -258,15 +257,21 @@ class IntelligenceService {
     final result = await complete(
       settings,
       key,
-      '分析以下资料，生成观点卡片。insights每条说明观点、依据和适用条件，引用仅用资料id。'
-      'connections比较与已有资料的新增、重复、冲突；没有相关资料时明确说明。questions为可由用户确认的下一步研究建议。'
+      '分析以下资料，生成观点卡片。insights保留兼容，每条说明观点、依据和适用条件，引用仅用资料id。'
+      '同时返回structuredInsights数组，每条包含finding、change、impact、unknowns、evidence。'
+      'evidence必须使用提供的sourceId、contentVersion和contentBlocks里的blockId；PDF可使用pdfPage。'
+      '无法定位时设置unresolved:true并保留quote，不得编造段落或页码。'
+      'connections比较与已有资料、笔记和已确认背景的新增、重复、冲突；没有相关资料时明确说明。questions为可由用户确认的下一步研究建议。'
       'suggestedTopics最多3个兴趣方向，不能把阅读解释为立场认同。'
       'feedback表示用户明确的有用程度（-1无用、0未评价、1有用），优先于阅读及研究建议采纳等注意力信号；注意力不等于认同。'
-      '返回 {"summary":"...","insights":["..."],"connections":["..."],"questions":["..."],"sourceIds":["id"],"suggestedTopics":["主题"]}。'
+      '返回 {"summary":"...","insights":["..."],"structuredInsights":[{"id":"...","finding":"...","change":"...","impact":"...","evidence":[{"sourceId":"id","sourceVersion":1,"blockId":"body-1","quote":"..."}],"unknowns":["..."],"verdict":"new"}],"connections":["..."],"questions":["..."],"sourceIds":["id"],"suggestedTopics":["主题"]}。'
       '\n输入数据：${jsonEncode(input)}',
       imageDataUrls: imageDataUrls,
     );
     DiagnosticScope.ensureAllowed();
+    KnowledgeService.validateStructuredInsights(result['structuredInsights'], {
+      for (final source in [item, ...related]) source.id: source,
+    });
     final analysis = Analysis.fromJson(result);
     if (analysis.summary.trim().isEmpty) {
       throw const FormatException('模型未生成有效观点卡片');
@@ -300,21 +305,37 @@ class IntelligenceService {
     List<LibraryItem> items,
   ) async {
     DiagnosticScope.ensureAllowed();
+    final selectedSources = KnowledgeService.selectedSourceIdsForTopic(topic);
+    final scopedItems = selectedSources == null
+        ? items
+        : items.where((item) => selectedSources.contains(item.id)).toList();
+    final selectedContexts = KnowledgeService.selectedContextIdsForTopic(topic);
+    final contexts =
+        KnowledgeService.contextEntriesForTopic(topic, confirmedOnly: true)
+            .where(
+              (entry) =>
+                  selectedContexts == null ||
+                  selectedContexts.contains(entry['id']),
+            )
+            .toList();
     final result = await complete(
       settings,
       key,
-      '仅基于以下本地资料，为研究问题生成综合分析，明确共识、冲突、适用条件与未知。'
-      '不得宣称已开展外部搜索。返回 {"overview":"带[id]引用的综述", "sourceIds":["实际资料id"]}。'
+      '仅基于以下本地资料、用户笔记和已纳入背景，为研究问题生成综合分析，明确共识、冲突、适用条件、相对已有认识的变化、个人影响与未知。'
+      '不得宣称已开展外部搜索。背景中的未确认个人判断只能作为待确认线索，不能当成事实。'
+      '返回 {"overview":"带[id]引用的综述", "sourceIds":["实际资料id"], "staleInputs":["过时或需更新的context id"]}。'
       '\n${jsonEncode({
         'question': topic.question,
+        'authorizedScope': topic.authorizedScope,
         'preferences': preferences(settings),
-        'sources': items.map((i) => {'id': i.id, 'title': i.title, 'content': i.analysis?.toJson() ?? _clip(i.body, 6000)}).toList(),
+        'contexts': contexts,
+        'sources': scopedItems.map((i) => {...KnowledgeService.itemPayload(i, clipChars: 6000), 'analysis': i.analysis?.toJson()}).toList(),
       })}',
     );
     DiagnosticScope.ensureAllowed();
     validateCitations(
       result['overview'] as String? ?? '',
-      items.map((i) => i.id).toSet(),
+      scopedItems.map((i) => i.id).toSet(),
     );
     return result;
   }
@@ -336,6 +357,7 @@ class IntelligenceService {
     required bool Function() authorized,
     required Future<void> Function() onProgress,
     String previousReport = '',
+    Json localContext = const {},
   }) async {
     DiagnosticScope.registerCredentials([key, searchKey]);
     DiagnosticScope.ensureAllowed();
@@ -353,80 +375,124 @@ class IntelligenceService {
         (url) => _canonicalUrl(url) == _canonicalUrl(source.url),
       ),
     );
-    var query = run.goal;
+    const compareStep = '比较证据并检查研究缺口';
+    _restoreLegacyResearchCheckpoint(run);
+    var query = run.pendingQuery.trim().isEmpty ? run.goal : run.pendingQuery;
     run.status = 'running';
     try {
-      while (run.calls + 2 <= run.callLimit) {
-        DiagnosticScope.ensureAllowed();
-        if (!authorized()) {
-          run.status = 'paused';
-          break;
-        }
-        run.calls++;
-        final searchStep = '检索：$query';
-        run.steps.add(searchStep);
+      if (run.pendingStage.isEmpty && run.report.trim().isNotEmpty) {
+        run.status = 'complete';
+        run.requestPending = false;
         await onProgress();
+        return;
+      }
+      while (run.calls < run.callLimit) {
         DiagnosticScope.ensureAllowed();
         if (!authorized()) {
           run.status = 'paused';
           break;
         }
-        final search = await DiagnosticScope.step(
-          searchStep,
-          () => _post(settings.searchEndpoint, searchKey, {
-            'query': query,
-            'max_results': 5,
-            'search_depth': 'basic',
-            'include_raw_content': true,
-          }),
-        );
-        DiagnosticScope.ensureAllowed();
-        if (!authorized()) {
-          run.status = 'paused';
+        if (run.pendingStage.isEmpty && run.report.trim().isNotEmpty) {
+          run.status = 'complete';
+          await onProgress();
           break;
         }
-        for (final value in search['results'] as List? ?? []) {
+        if (run.pendingStage.isEmpty) {
+          run.pendingStage = 'search';
+          run.pendingQuery = query;
+          await onProgress();
+        }
+        if (run.calls + 1 > run.callLimit) {
+          run.status = 'budget';
+          run.requestPending = false;
+          await onProgress();
+          break;
+        }
+        if (run.pendingStage == 'search') {
           DiagnosticScope.ensureAllowed();
-          final entry = json(value), url = entry['url'] as String? ?? '';
-          final uri = Uri.tryParse(url);
-          if (uri == null ||
-              !['https', 'http'].contains(uri.scheme) ||
-              uri.host.isEmpty) {
-            continue;
+          if (!authorized()) {
+            run.status = 'paused';
+            break;
           }
-          if (DiagnosticScope.excludedUrls.any(
-            (excluded) => _canonicalUrl(excluded) == _canonicalUrl(url),
-          )) {
-            continue;
+          run.calls++;
+          run.requestPending = true;
+          final searchStep = '检索：$query';
+          run.steps.add(searchStep);
+          await onProgress();
+          DiagnosticScope.ensureAllowed();
+          if (!authorized()) {
+            run.requestPending = false;
+            run.status = 'paused';
+            break;
           }
-          if (run.sources.any((s) => s.url == url)) continue;
-          var sourceNumber = run.sources.length + 1;
-          while (run.sources.any((source) => source.id == 'S$sourceNumber')) {
-            sourceNumber++;
-          }
-          run.sources.add(
-            ResearchSource(
-              id: 'S$sourceNumber',
-              title: entry['title'] as String? ?? url,
-              url: url,
-              snippet: _clip(
-                (entry['raw_content'] ?? entry['content'] ?? '').toString(),
-                12000,
-              ),
-            ),
+          final search = await DiagnosticScope.step(
+            searchStep,
+            () => _post(settings.searchEndpoint, searchKey, {
+              'query': query,
+              'max_results': 5,
+              'search_depth': 'basic',
+              'include_raw_content': true,
+            }),
           );
+          DiagnosticScope.ensureAllowed();
+          if (!authorized()) {
+            run.status = 'paused';
+            break;
+          }
+          for (final value in search['results'] as List? ?? []) {
+            DiagnosticScope.ensureAllowed();
+            final entry = json(value), url = entry['url'] as String? ?? '';
+            final uri = Uri.tryParse(url);
+            if (uri == null ||
+                !['https', 'http'].contains(uri.scheme) ||
+                uri.host.isEmpty) {
+              continue;
+            }
+            if (DiagnosticScope.excludedUrls.any(
+              (excluded) => _canonicalUrl(excluded) == _canonicalUrl(url),
+            )) {
+              continue;
+            }
+            if (run.sources.any((s) => s.url == url)) continue;
+            var sourceNumber = run.sources.length + 1;
+            while (run.sources.any((source) => source.id == 'S$sourceNumber')) {
+              sourceNumber++;
+            }
+            run.sources.add(
+              ResearchSource(
+                id: 'S$sourceNumber',
+                title: entry['title'] as String? ?? url,
+                url: url,
+                snippet: _clip(
+                  (entry['raw_content'] ?? entry['content'] ?? '').toString(),
+                  12000,
+                ),
+              ),
+            );
+          }
+          run.steps.add('检索完成：$query');
+          run.requestPending = false;
+          run.pendingStage = 'compare';
+          run.pendingQuery = query;
+          await onProgress();
+          continue;
         }
-        await onProgress();
         if (!authorized()) {
           run.status = 'paused';
           break;
         }
+        if (run.pendingStage != 'compare') {
+          run.status = 'failed';
+          run.error = '未知研究阶段：${run.pendingStage}';
+          break;
+        }
         run.calls++;
-        const compareStep = '比较证据并检查研究缺口';
+        run.requestPending = true;
         run.steps.add(compareStep);
         await onProgress();
         DiagnosticScope.ensureAllowed();
         if (!authorized()) {
+          run.requestPending = false;
           run.status = 'paused';
           break;
         }
@@ -440,7 +506,7 @@ class IntelligenceService {
             '如果需要继续查证，nextQuery给一个仍在原问题范围内的查询，否则为空。'
             'meaningful仅当相对上次报告有重要新证据、结论变化或需用户决策时为true。'
             '返回 {"report":"分析、证据与未解决问题", "nextQuery":"", "meaningful":false}。'
-            '\n${jsonEncode({'authorizedGoal': run.goal, 'previousReport': previousReport, 'remainingCalls': run.callLimit - run.calls, 'preferences': preferences(settings), 'sources': run.sources.map((s) => s.toJson()).toList()})}',
+            '\n${jsonEncode({'authorizedGoal': run.goal, 'previousReport': previousReport, 'remainingCalls': run.callLimit - run.calls, 'preferences': preferences(settings), if (localContext.isNotEmpty) 'localContext': localContext, 'sources': run.sources.map((s) => s.toJson()).toList()})}',
           ),
         );
         DiagnosticScope.ensureAllowed();
@@ -459,12 +525,19 @@ class IntelligenceService {
             result['meaningful'] == true &&
             run.sources.isNotEmpty &&
             report != previousReport;
+        run.requestPending = false;
         final next = (result['nextQuery'] as String? ?? '').trim();
         if (next.isEmpty) {
+          run.pendingStage = '';
+          run.pendingQuery = '';
           run.status = 'complete';
+          await onProgress();
           break;
         }
         query = '${run.goal}\n补充查证（限定原主题）：${_clip(next, 500)}';
+        run.pendingStage = 'search';
+        run.pendingQuery = query;
+        run.steps.add('待查：$query');
         await onProgress();
       }
       if (run.status == 'running') run.status = 'budget';
@@ -476,6 +549,27 @@ class IntelligenceService {
     } finally {
       run.completedAt = DateTime.now();
       await onProgress();
+    }
+  }
+
+  void _restoreLegacyResearchCheckpoint(ResearchRun run) {
+    if (run.pendingStage.isNotEmpty || run.report.trim().isNotEmpty) return;
+    for (final step in run.steps.reversed) {
+      if (step.startsWith('待查：')) {
+        run.pendingStage = 'search';
+        run.pendingQuery = step.substring('待查：'.length);
+        return;
+      }
+      if (step.startsWith('检索完成：')) {
+        run.pendingStage = 'compare';
+        run.pendingQuery = step.substring('检索完成：'.length);
+        return;
+      }
+      if (step.startsWith('检索：') && run.sources.isEmpty) {
+        run.pendingStage = 'search';
+        run.pendingQuery = step.substring('检索：'.length);
+        return;
+      }
     }
   }
 

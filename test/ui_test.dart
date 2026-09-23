@@ -37,6 +37,8 @@ void main() {
     await tester.pumpWidget(ReadlaterApp(controller: controller));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('资料').last);
+    await tester.pumpAndSettle();
 
     expect(controller.resumeCalls, 1);
     expect(controller.data.items.single.body, '一段从系统分享来的文字');
@@ -74,6 +76,8 @@ void main() {
       expect(find.text('研究'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
 
+      await tester.tap(find.text('资料').last);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('个人知识管理博客'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -149,16 +153,19 @@ void main() {
       final controller = _controller(data);
 
       await tester.pumpWidget(ReadlaterApp(controller: controller));
-      await tester.tap(find.text('研究'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('研究').last);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('个人知识管理'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
 
       expect(find.text('关联外部研究'), findsOneWidget);
       expect(find.textContaining('外部研究来源 [1]'), findsOneWidget);
       expect(find.textContaining('1 个来源'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('授权追踪'),
+        350,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(find.text('授权追踪'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -168,9 +175,10 @@ void main() {
     final controller = _controller(AppData());
 
     await tester.pumpWidget(ReadlaterApp(controller: controller));
-    await tester.tap(find.text('设置'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byIcon(Icons.tune_outlined));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -520));
+    await tester.pumpAndSettle();
 
     expect(find.text('搜索 API Key（独立于模型 Key）'), findsOneWidget);
     expect(find.text('搜索服务使用独立 Key，不与模型 Key 共用'), findsOneWidget);

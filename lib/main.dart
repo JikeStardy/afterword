@@ -5,14 +5,35 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import 'core/app_controller.dart';
+import 'platform/native_bridge.dart';
 import 'ui/app_shell.dart';
 import 'ui/common.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    final controller = await AppController.open();
+    var runtime = await const NativeBridge().runtimeContext();
+    final controller = await AppController.open(
+      digestOnly: runtime.mode == 'digestOnly',
+    );
+    controller.bindNativeRuntime();
+    runtime = await controller.native.runtimeContext();
+    if (runtime.mode == 'interactive') await controller.activateInteractive();
+    for (final event in runtime.recentEvents) {
+      if (event.kind == 'cancelAll' || event.kind == 'timeout') {
+        await controller.pauseTasks(cancelled: event.kind == 'cancelAll');
+      }
+    }
+    if (runtime.openedEntityType != null) {
+      controller.pendingNavigation = {
+        'entityType': runtime.openedEntityType!,
+        'entityId': runtime.openedEntityId ?? '',
+      };
+    }
     runApp(ReadlaterApp(controller: controller));
+    if (controller.digestOnly) {
+      unawaited(controller.sendDailyDigest());
+    }
   } catch (error) {
     runApp(ReadlaterStartupError(error: error));
   }
@@ -37,10 +58,11 @@ class _ReadlaterAppState extends State<ReadlaterApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _resume());
-    _resumeTimer = Timer.periodic(
-      const Duration(minutes: 10),
-      (_) => _resume(),
-    );
+    _resumeTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _resume();
+      }
+    });
   }
 
   @override
@@ -52,6 +74,7 @@ class _ReadlaterAppState extends State<ReadlaterApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.controller.setForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       _resume();
     }
@@ -63,7 +86,10 @@ class _ReadlaterAppState extends State<ReadlaterApp>
     }
     _resuming = true;
     try {
-      await widget.controller.resume();
+      if (!widget.controller.digestOnly) {
+        widget.controller.setForeground(true);
+        await widget.controller.resume();
+      }
     } catch (_) {
       // The controller owns visible errors; background resume should stay quiet.
     } finally {
@@ -109,6 +135,7 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
       final controller = await AppController.open(
         recoveryBackup: Uint8List.fromList(bytes),
       );
+      controller.bindNativeRuntime();
       if (!mounted) {
         return;
       }

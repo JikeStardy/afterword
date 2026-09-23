@@ -10,9 +10,14 @@ import 'package:path_provider/path_provider.dart';
 import '../platform/native_bridge.dart';
 import '../services/content_service.dart';
 import '../services/intelligence_service.dart';
+import '../services/knowledge_service.dart';
 import 'models.dart';
 import 'diagnostics.dart';
+import 'retrieval.dart';
 import 'store.dart';
+
+part 'task_controller.dart';
+part 'personal_controller.dart';
 
 abstract class SecretStore {
   Future<String?> read(String key);
@@ -38,6 +43,16 @@ class AppController extends ChangeNotifier {
   final NativeBridge native;
   final SecretStore secrets;
   AppData data = AppData();
+  RuntimeState runtime = RuntimeState();
+  BackgroundJob? _currentJob;
+  Future<void>? _queueFuture;
+  Future<void>? _interactiveFuture;
+  bool _digestOnly = false;
+  bool _foreground = false;
+  bool _serviceStarted = false;
+  final Map<String, Timer> _refreshTimers = {};
+  Map<String, String>? pendingNavigation;
+  bool? notificationsAllowed;
   String? lastError;
   String _apiKey = '', _searchKey = '';
   int _active = 0;
@@ -62,7 +77,10 @@ class AppController extends ChangeNotifier {
        intelligence = intelligence ?? IntelligenceService(),
        native = native ?? const NativeBridge(),
        secrets = secrets ?? DeviceSecrets();
-  static Future<AppController> open({Uint8List? recoveryBackup}) async {
+  static Future<AppController> open({
+    Uint8List? recoveryBackup,
+    bool digestOnly = false,
+  }) async {
     final directory = await getApplicationSupportDirectory();
     final controller = AppController(
       store: LocalStore('${directory.path}/library'),
@@ -80,7 +98,7 @@ class AppController extends ChangeNotifier {
           serviceSettings: deviceSettings,
         );
       }
-      await controller.initialize();
+      await controller.initialize(digestOnly: digestOnly);
       return controller;
     } catch (_) {
       controller.dispose();
@@ -88,8 +106,11 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({bool digestOnly = false}) async {
+    _digestOnly = digestOnly;
     data = store.load();
+    runtime = store.loadRuntime();
+    if (digestOnly) return;
     diagnostics.debugEnabled = data.settings.debugModelLogging;
     diagnostics.prune();
     await cleanupExpiredTrash();
@@ -125,9 +146,13 @@ class AppController extends ChangeNotifier {
 
   void _save() {
     if (!_disposed) {
-      store.save(data);
+      store.saveWithRuntime(data, runtime);
       notifyListeners();
     }
+  }
+
+  void _emit() {
+    if (!_disposed) notifyListeners();
   }
 
   Future<T> _work<T>(
@@ -161,6 +186,7 @@ class AppController extends ChangeNotifier {
       if (!_disposed) {
         _assetCleanupPending = true;
         _cleanAssetsIfIdle();
+        await _stopServiceIfIdle();
         notifyListeners();
       }
     }
@@ -204,16 +230,23 @@ class AppController extends ChangeNotifier {
   }
 
   bool _reusableRun(ResearchRun run) =>
+      !run.stale &&
       _reusable(run.inputItemIds) &&
       _reusable(_researchUrlInputs(run).toList());
   bool _reusable(List<String>? inputs) =>
       inputs != null &&
       inputs.every((id) => data.items.any((i) => i.id == id && i.isActive));
 
+  bool _analysisReusable(LibraryItem item) =>
+      item.analysis?.stale != true && _reusable(item.analysis?.inputItemIds);
+
   /// Prompts use copies so excluded cached outputs remain readable in history.
   LibraryItem _safeSource(LibraryItem item) {
     final copy = LibraryItem.fromJson(item.toJson());
-    if (!_reusable(copy.analysis?.inputItemIds)) copy.analysis = null;
+    if (!_reusable(copy.analysis?.inputItemIds) ||
+        copy.analysis?.stale == true) {
+      copy.analysis = null;
+    }
     return copy;
   }
 
@@ -231,7 +264,7 @@ class AppController extends ChangeNotifier {
     return {
       for (final item in data.items)
         if (item.isActive &&
-            _reusable(item.analysis?.inputItemIds) &&
+            _analysisReusable(item) &&
             item.analysis!.suggestedTopics.any(inferred.contains))
           ...item.analysis!.inputItemIds!,
     };
@@ -245,12 +278,7 @@ class AppController extends ChangeNotifier {
   void _recomputeInterests() {
     final settings = data.settings;
     final eligible = data.items
-        .where(
-          (i) =>
-              i.isActive &&
-              i.feedback >= 0 &&
-              _reusable(i.analysis?.inputItemIds),
-        )
+        .where((i) => i.isActive && i.feedback >= 0 && _analysisReusable(i))
         .toList();
     settings.inferredInterests = {
       ...settings.confirmedInterests,
@@ -276,14 +304,14 @@ class AppController extends ChangeNotifier {
         (i) =>
             i.isActive &&
             i.feedback >= 0 &&
-            _reusable(i.analysis?.inputItemIds) &&
+            _analysisReusable(i) &&
             i.analysis!.suggestedTopics.contains(topic.title),
       );
   Set<String> _topicInputs(Topic topic) => topic.automatic
       ? {
           for (final item in data.items)
             if (item.isActive &&
-                _reusable(item.analysis?.inputItemIds) &&
+                _analysisReusable(item) &&
                 item.analysis!.suggestedTopics.contains(topic.title))
               ...item.analysis!.inputItemIds!,
         }
@@ -291,6 +319,13 @@ class AppController extends ChangeNotifier {
 
   void _invalidateTasks() {
     _lifecycleRevision++;
+    for (final job in runtime.jobs) {
+      if (['queued', 'running', 'paused'].contains(job.status)) {
+        job.status = 'cancelled';
+        job.error = '资料状态或授权已变化，请重新提交';
+        _markJobInterrupted(job);
+      }
+    }
     for (final item in data.items) {
       if (['analyzing', 'pending'].contains(item.status)) {
         item.status = 'interrupted';
@@ -420,9 +455,12 @@ class AppController extends ChangeNotifier {
     String text, {
     String title = '',
     String notes = '',
+    bool analyzeAutomatically = true,
   }) => _work(
     () async {
       if (text.trim().isEmpty) throw const FormatException('请输入需要保存的内容');
+      if (analyzeAutomatically) await _startUserWork();
+      DiagnosticScope.ensureAllowed();
       final item = LibraryItem(
         id: newId(),
         title: title.trim().isEmpty
@@ -441,14 +479,23 @@ class AppController extends ChangeNotifier {
       );
       data.items.insert(0, item);
       diagnostics.addInputIds([item.id]);
-      await diagnostics.step('保存原文', () async => _save());
-      await analyze(item.id);
+      if (analyzeAutomatically) {
+        _enqueue('analysis', item.id);
+      } else {
+        item.status = 'retryable';
+      }
+      await diagnostics.step('保存原文并加入任务队列', () async => _save());
+      _scheduleQueue();
       return item;
     },
     type: 'capture',
     title: '保存文字',
   );
-  Future<LibraryItem> captureUrl(String url, {String notes = ''}) => _work(
+  Future<LibraryItem> captureUrl(
+    String url, {
+    String notes = '',
+    bool analyzeAutomatically = true,
+  }) => _work(
     () async {
       final uri = Uri.tryParse(url.trim());
       if (uri == null ||
@@ -456,15 +503,22 @@ class AppController extends ChangeNotifier {
           uri.host.isEmpty) {
         throw const FormatException('请输入有效网页链接');
       }
-      final matches = data.items.where((i) => i.url == uri.toString());
+      final matches = data.items.where(
+        (i) =>
+            i.url.isNotEmpty &&
+            normalizedCaptureUrl(i.url) == normalizedCaptureUrl(uri.toString()),
+      );
       if (matches.isNotEmpty) {
         final existing = matches.first;
+        _notice('该链接已收藏，打开已有资料');
         if (!existing.isActive) {
           _notice(existing.isTrashed ? '该网页已在回收站，可恢复后使用' : '该网页已归档，可取消归档后使用');
           _save();
         }
         return existing;
       }
+      if (analyzeAutomatically) await _startUserWork();
+      DiagnosticScope.ensureAllowed();
       final item = LibraryItem(
         id: newId(),
         title: uri.host,
@@ -475,10 +529,13 @@ class AppController extends ChangeNotifier {
       );
       data.items.insert(0, item);
       diagnostics.addInputIds([item.id]);
-      await diagnostics.step('保存网页链接', () async => _save());
-      await _fetch(item);
-      DiagnosticScope.ensureAllowed();
-      if (item.body.isNotEmpty) await analyze(item.id);
+      if (analyzeAutomatically) {
+        _enqueue('capture', item.id);
+      } else {
+        item.status = 'retryable';
+      }
+      await diagnostics.step('保存网页链接并加入任务队列', () async => _save());
+      _scheduleQueue();
       return item;
     },
     type: 'capture',
@@ -492,18 +549,86 @@ class AppController extends ChangeNotifier {
     item.error = '';
     _save();
     try {
-      final article = await diagnostics.step(
-        '提取网页正文',
-        () => content.fetchArticle(item.url),
-      );
-      _guard(revision);
-      item.title = article.title;
-      item.body = article.body;
-      item.status = 'saved';
-      _save();
-      var failed = 0;
-      for (final url in article.imageUrls.take(30)) {
+      var imageUrls = strings(_currentJob?.checkpoint['imageUrls']);
+      if (_currentJob?.checkpoint['articleFetched'] != true) {
+        final article = await diagnostics.step(
+          '提取网页正文',
+          () => content.fetchArticle(item.url),
+        );
         _guard(revision);
+        if (item.body.isNotEmpty && item.body != article.body) {
+          item.contentHistory.add(
+            ContentRevision(
+              version: item.contentVersion,
+              title: item.title,
+              body: item.body,
+              blocks: item.contentBlocks
+                  .map((block) => ContentBlock.fromJson(block.toJson()))
+                  .toList(),
+            ),
+          );
+          item.contentVersion++;
+          for (final annotation in item.annotations) {
+            annotation.anchor.unresolved = true;
+          }
+          if (item.analysis != null) item.analysis!.stale = true;
+          for (final dependent in data.items) {
+            if (dependent.analysis?.inputItemIds?.contains(item.id) == true) {
+              dependent.analysis!.stale = true;
+            }
+          }
+          for (final topic in data.topics) {
+            if (topic.inputItemIds?.contains(item.id) == true) {
+              topic.overviewStale = true;
+            }
+          }
+          item.readingPosition = null;
+        }
+        item.title = article.title;
+        item.body = article.body;
+        item.contentBlocks = article.contentBlocks
+            .map(
+              (block) => ContentBlock(
+                id: block.id,
+                kind: enumValue(
+                  ContentBlockKind.values,
+                  block.kind,
+                  ContentBlockKind.paragraph,
+                ),
+                text: block.text,
+                level: block.level ?? 0,
+                items: block.kind == 'list' ? block.text.split('\n') : [],
+                rows: block.kind == 'table'
+                    ? block.text
+                          .split('\n')
+                          .map((row) => row.split('\t'))
+                          .toList()
+                    : [],
+                assetId: block.imageUrl,
+                alt: block.text,
+              ),
+            )
+            .toList();
+        item.status = 'saved';
+        imageUrls = article.imageUrls;
+        _saveCheckpoint('正文已保存', {
+          'imageUrls': imageUrls,
+          'articleFetched': true,
+        });
+        _save();
+      }
+      var failed = 0;
+      for (final url in imageUrls.take(30)) {
+        _guard(revision);
+        final savedImages = json(_currentJob?.checkpoint['savedImages'] ?? {});
+        if (savedImages.containsKey(url)) {
+          for (final block in item.contentBlocks.where(
+            (b) => b.assetId == url,
+          )) {
+            block.assetId = savedImages[url] as String;
+          }
+          continue;
+        }
         try {
           final bytes = await diagnostics.step(
             '保存主要图片',
@@ -528,6 +653,13 @@ class AppController extends ChangeNotifier {
           );
           _guard(revision);
           item.assets.add(asset);
+          for (final block in item.contentBlocks.where(
+            (b) => b.assetId == url,
+          )) {
+            block.assetId = asset.path;
+          }
+          savedImages[url] = asset.path;
+          _saveCheckpoint('保存图片', {'savedImages': savedImages});
         } on DiagnosticCancelled {
           rethrow;
         } catch (_) {
@@ -535,8 +667,8 @@ class AppController extends ChangeNotifier {
         }
       }
       _guard(revision);
-      item.warning = failed > 0 ? '正文已保存，$failed 张图片未能下载，可稍后重新收藏或补充' : '';
-      if (article.imageUrls.length > 30) item.warning += ' 本篇已保存前30张主要图片。';
+      item.warning = failed > 0 ? '正文已保存，$failed 张图片未能下载，可重试补图' : '';
+      if (imageUrls.length > 30) item.warning += ' 本篇已保存前30张主要图片。';
       _save();
     } on DiagnosticCancelled {
       diagnostics.failCurrent('资料状态已变化，已停止抓取');
@@ -549,7 +681,11 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<LibraryItem> importFile(String path, {String? name}) => _work(
+  Future<LibraryItem> importFile(
+    String path, {
+    String? name,
+    bool analyzeAutomatically = true,
+  }) => _work(
     () async {
       final fileName = name ?? path.split(Platform.pathSeparator).last;
       final ext = fileName.split('.').last.toLowerCase();
@@ -557,6 +693,8 @@ class AppController extends ChangeNotifier {
       if (!pdf && !['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(ext)) {
         throw const FormatException('目前支持 PDF、PNG、JPEG、WebP 和 GIF');
       }
+      if (analyzeAutomatically) await _startUserWork();
+      DiagnosticScope.ensureAllowed();
       final mime = pdf
           ? 'application/pdf'
           : 'image/${ext == 'jpg' ? 'jpeg' : ext}';
@@ -573,8 +711,13 @@ class AppController extends ChangeNotifier {
       );
       data.items.insert(0, item);
       diagnostics.addInputIds([item.id]);
+      if (analyzeAutomatically) {
+        _enqueue('analysis', item.id);
+      } else {
+        item.status = 'retryable';
+      }
       _save();
-      await analyze(item.id);
+      _scheduleQueue();
       return item;
     },
     type: 'import',
@@ -641,16 +784,34 @@ class AppController extends ChangeNotifier {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
-  }) => diagnostics.step(
-    imageDataUrls.isEmpty ? '调用文本模型' : '调用多模态模型',
-    () => intelligence.analyze(
-      settings,
-      key,
-      item,
-      related,
-      imageDataUrls: imageDataUrls,
-    ),
-  );
+    String checkpointKey = 'finalAnalysis',
+  }) async {
+    final job = _currentJob;
+    final cached = job?.checkpoint[checkpointKey];
+    if (cached is Map) return Analysis.fromJson(json(cached));
+    final label = imageDataUrls.isEmpty ? '调用文本模型' : '调用多模态模型';
+    _saveCheckpoint(label, {
+      'requestPending': true,
+      'modelAttempts':
+          ((job?.checkpoint['modelAttempts'] as num?)?.toInt() ?? 0) + 1,
+    });
+    final result = await diagnostics.step(
+      label,
+      () => intelligence.analyze(
+        settings,
+        key,
+        item,
+        related,
+        imageDataUrls: imageDataUrls,
+      ),
+    );
+    DiagnosticScope.ensureAllowed();
+    _saveCheckpoint(label, {
+      checkpointKey: result.toJson(),
+      'requestPending': false,
+    });
+    return result;
+  }
 
   Future<void> analyze(String itemId) => _work(
     () async {
@@ -671,21 +832,49 @@ class AppController extends ChangeNotifier {
       }
       item.status = 'analyzing';
       item.error = '';
+      final analyzedNotes = item.notes;
       _save();
       try {
         final settings = _promptSettings();
         final related = _related(item);
+        final promptItem = LibraryItem.fromJson(item.toJson());
+        final signature = jsonEncode([
+          promptItem.body,
+          analyzedNotes,
+          promptItem.contentVersion,
+          promptItem.annotations
+              .map((annotation) => annotation.toJson())
+              .toList(),
+          for (final source in related)
+            [
+              source.id,
+              source.body,
+              source.notes,
+              source.analysis?.toJson(),
+              source.annotations
+                  .map((annotation) => annotation.toJson())
+                  .toList(),
+            ],
+        ]);
+        final oldSignature = _currentJob?.checkpoint['analysisInput'];
+        if (oldSignature != null && oldSignature != signature) {
+          throw StateError('分析输入已变化，请手动重试以重新分析');
+        }
+        _saveCheckpoint('准备分析输入', {'analysisInput': signature});
         final inputs = {
           item.id,
           ..._preferenceInputs(),
           for (final source in related) ..._sourceInputs(source),
         };
         diagnostics.addInputIds(inputs);
+        _saveCheckpoint('准备分析', {'inputIds': inputs.toList()});
         late Analysis analysis;
         if (item.kind == ItemKind.pdf) {
           final path = assetPath(item.assets.first);
-          final summaries = <String>[];
-          var page = 0, total = 1;
+          final summaries = strings(_currentJob?.checkpoint['pdfSummaries']);
+          var page = (_currentJob?.checkpoint['pdfPage'] as num?)?.toInt() ?? 0;
+          var total =
+              (_currentJob?.checkpoint['pdfTotal'] as num?)?.toInt() ?? 1;
           while (page < total) {
             _guard(revision);
             final rendered = await native.renderPdf(
@@ -695,6 +884,7 @@ class AppController extends ChangeNotifier {
             );
             _guard(revision);
             total = rendered.pageCount;
+            item.pdfPageCount = total;
             if (total == 0 || rendered.images.isEmpty) {
               throw const FormatException('PDF 没有可分析的页面');
             }
@@ -706,7 +896,11 @@ class AppController extends ChangeNotifier {
               title:
                   '${item.title} 第${page + 1}–${(page + 4).clamp(1, total)}页',
               kind: ItemKind.pdf,
-              notes: item.notes,
+              pdfPageCount: total,
+              pdfPageStart: page + 1,
+              pdfPageEnd: page + rendered.images.length,
+              notes: analyzedNotes,
+              annotations: promptItem.annotations,
               readCount: item.readCount,
               researchAdoptions: item.researchAdoptions,
               feedback: item.feedback,
@@ -716,6 +910,7 @@ class AppController extends ChangeNotifier {
               _apiKey,
               batch,
               related,
+              checkpointKey: 'pdf:$page',
               imageDataUrls: rendered.images
                   .map((s) => 'data:image/jpeg;base64,$s')
                   .toList(),
@@ -723,13 +918,22 @@ class AppController extends ChangeNotifier {
             _guard(revision);
             summaries.add('第${page + 1}页起：${jsonEncode(result.toJson())}');
             page += rendered.images.length;
+            _saveCheckpoint('PDF $page / $total 页', {
+              'pdfSummaries': summaries.toList(),
+              'pdfPage': page,
+              'pdfTotal': total,
+              'completed': page,
+              'total': total,
+            });
           }
           final combined = LibraryItem(
             id: item.id,
             title: item.title,
             kind: ItemKind.pdf,
+            pdfPageCount: total,
             body: summaries.join('\n'),
-            notes: item.notes,
+            notes: analyzedNotes,
+            annotations: promptItem.annotations,
             readCount: item.readCount,
             researchAdoptions: item.researchAdoptions,
             feedback: item.feedback,
@@ -746,21 +950,26 @@ class AppController extends ChangeNotifier {
           analysis = await _analyzeWithTrace(
             settings,
             _apiKey,
-            item,
+            promptItem,
             related,
             imageDataUrls: ['data:${asset.mime};base64,${base64Encode(bytes)}'],
           );
         } else {
           final text = item.body;
           if (text.length > 24000) {
-            final sections = <String>[];
-            for (var start = 0; start < text.length; start += 24000) {
+            final sections = strings(_currentJob?.checkpoint['textSections']);
+            for (
+              var start = sections.length * 24000;
+              start < text.length;
+              start += 24000
+            ) {
               _guard(revision);
               final part = LibraryItem(
                 id: item.id,
                 title: item.title,
                 kind: item.kind,
-                notes: item.notes,
+                notes: analyzedNotes,
+                annotations: promptItem.annotations,
                 readCount: item.readCount,
                 researchAdoptions: item.researchAdoptions,
                 feedback: item.feedback,
@@ -776,9 +985,15 @@ class AppController extends ChangeNotifier {
                     _apiKey,
                     part,
                     [],
+                    checkpointKey: 'text:$start',
                   )).toJson(),
                 ),
               );
+              _saveCheckpoint('长文第 ${sections.length} 段', {
+                'textSections': sections.toList(),
+                'completed': sections.length,
+                'total': (text.length / 24000).ceil(),
+              });
             }
             analysis = await _analyzeWithTrace(
               settings,
@@ -788,7 +1003,8 @@ class AppController extends ChangeNotifier {
                 title: item.title,
                 kind: item.kind,
                 body: sections.join('\n'),
-                notes: item.notes,
+                notes: analyzedNotes,
+                annotations: promptItem.annotations,
                 readCount: item.readCount,
                 researchAdoptions: item.researchAdoptions,
                 feedback: item.feedback,
@@ -799,20 +1015,53 @@ class AppController extends ChangeNotifier {
             analysis = await _analyzeWithTrace(
               settings,
               _apiKey,
-              item,
+              promptItem,
               related,
             );
           }
         }
         _guard(revision);
         analysis.inputItemIds = inputs.toList();
+        _resolveFinalEvidence(
+          analysis,
+          {item.id: item, for (final source in related) source.id: source},
+          summarySourceId: item.kind == ItemKind.pdf || item.body.length > 24000
+              ? item.id
+              : null,
+        );
+        analysis.stale =
+            item.notes != analyzedNotes ||
+            jsonEncode(item.annotations.map((a) => a.toJson()).toList()) !=
+                jsonEncode(
+                  promptItem.annotations.map((a) => a.toJson()).toList(),
+                ) ||
+            related.any(
+              (source) => data.items.any(
+                (current) =>
+                    current.id == source.id &&
+                    (current.notes != source.notes ||
+                        current.contentVersion != source.contentVersion ||
+                        jsonEncode(
+                              current.annotations
+                                  .map((a) => a.toJson())
+                                  .toList(),
+                            ) !=
+                            jsonEncode(
+                              source.annotations
+                                  .map((a) => a.toJson())
+                                  .toList(),
+                            )),
+              ),
+            );
         await diagnostics.step('保存分析结果', () async {
           _guard(revision);
           item.analysis = analysis;
           item.status = 'ready';
+          _currentJob?.checkpoint['analyzed'] = true;
         });
         _save();
         await _updateInterests(item);
+        _saveCheckpoint('主题更新完成', {'topicsUpdated': true});
       } on DiagnosticCancelled {
         diagnostics.failCurrent('资料状态已变化，本次分析已停止；历史结果保留');
       } catch (error) {
@@ -827,8 +1076,52 @@ class AppController extends ChangeNotifier {
     title: '分析资料',
     entityId: itemId,
   );
+  void _resolveFinalEvidence(
+    Analysis analysis,
+    Map<String, LibraryItem> sources, {
+    String? summarySourceId,
+  }) {
+    for (final insight in analysis.structuredInsights) {
+      for (final anchor in insight.evidence) {
+        try {
+          if (anchor.sourceId == summarySourceId &&
+              anchor.pdfPage == null &&
+              anchor.quote.trim().isEmpty) {
+            throw const FormatException('综合摘要引用缺少可核验原文摘录');
+          }
+          KnowledgeService.validateEvidenceAnchor(anchor.toJson(), sources);
+        } on FormatException {
+          final source = sources[anchor.sourceId];
+          final matches = source == null || anchor.quote.trim().isEmpty
+              ? <Json>[]
+              : KnowledgeService.contentBlocksForItem(source)
+                    .where(
+                      (block) =>
+                          (block['text'] as String).contains(anchor.quote),
+                    )
+                    .toList();
+          if (matches.length == 1 && source?.kind != ItemKind.pdf) {
+            anchor.blockId = matches.single['id'] as String;
+            anchor.sourceVersion = source!.contentVersion;
+            anchor.pdfPage = null;
+            anchor.unresolved = false;
+          } else {
+            anchor.unresolved = true;
+            anchor.blockId = '';
+            anchor.pdfPage = null;
+            anchor.note = '中间摘要中的引用未能在真实原文中定位；摘录尚未核验';
+          }
+        }
+      }
+    }
+  }
+
   Future<void> _updateInterests(LibraryItem item) async {
-    if (!item.isActive || !_reusable(item.analysis?.inputItemIds)) return;
+    if (!item.isActive ||
+        item.analysis?.stale == true ||
+        !_analysisReusable(item)) {
+      return;
+    }
     _recomputeInterests();
     for (final label in item.analysis?.suggestedTopics ?? <String>[]) {
       if (data.settings.suppressedInterests.contains(label)) continue;
@@ -839,7 +1132,7 @@ class AppController extends ChangeNotifier {
           .where(
             (i) =>
                 i.isActive &&
-                _reusable(i.analysis?.inputItemIds) &&
+                _analysisReusable(i) &&
                 (i.analysis?.suggestedTopics.contains(label) ?? false) &&
                 i.feedback >= 0,
           )
@@ -861,11 +1154,23 @@ class AppController extends ChangeNotifier {
     for (final topic in data.topics.toList()) {
       DiagnosticScope.ensureAllowed();
       if (!_topicSupported(topic)) continue;
+      if (strings(_currentJob?.checkpoint['updatedTopics'])
+          .contains(topic.id)) {
+        continue;
+      }
       if (topic.sourceIds.contains(item.id) ||
           _terms('${topic.title} ${topic.question}')
               .intersection(_terms('${item.title} ${item.body}'))
               .isNotEmpty) {
         await synthesizeTopic(topic.id);
+        if (topic.status == 'ready') {
+          _saveCheckpoint('已更新主题', {
+            'updatedTopics': [
+              ...strings(_currentJob?.checkpoint['updatedTopics']),
+              topic.id,
+            ],
+          });
+        }
       }
     }
   }
@@ -878,11 +1183,35 @@ class AppController extends ChangeNotifier {
   Future<void> setFeedback(String id, int feedback) async {
     _item(id).feedback = feedback.clamp(-1, 1);
     _recomputeInterests();
-    _save();
+    await refreshToday();
   }
 
   Future<void> updateNotes(String id, String notes) async {
-    _item(id).notes = notes;
+    final item = _item(id);
+    if (item.notes == notes) return;
+    item.notes = notes;
+    _personalKnowledgeChanged(item);
+  }
+
+  void _personalKnowledgeChanged(LibraryItem item) {
+    final id = item.id;
+    for (final run in data.runs) {
+      if (run.inputItemIds?.contains(id) == true) run.stale = true;
+    }
+    if (item.analysis != null) item.analysis!.stale = true;
+    for (final dependent in data.items) {
+      if (dependent.analysis?.inputItemIds?.contains(id) == true) {
+        dependent.analysis!.stale = true;
+      }
+    }
+    for (final topic in data.topics) {
+      if (topic.inputItemIds?.contains(id) == true ||
+          topic.sourceIds.contains(id) ||
+          topic.selectedSourceIds?.contains(id) == true) {
+        topic.overviewStale = true;
+        _scheduleTopicRefresh(topic.id);
+      }
+    }
     _save();
   }
 
@@ -903,7 +1232,7 @@ class AppController extends ChangeNotifier {
     _save();
   });
   Future<void> refreshFeeds() => _work(() async {
-    for (final feed in data.feeds) {
+    for (final feed in data.feeds.where((feed) => !feed.paused)) {
       try {
         final parsed = await content.fetchFeed(feed.url);
         feed.title = parsed.title;
@@ -928,6 +1257,7 @@ class AppController extends ChangeNotifier {
           .where((i) => i.id == entry.savedItemId)
           .firstOrNull;
       if (existing != null) {
+        _notice('该链接已收藏，打开已有资料');
         if (!existing.isActive) {
           _notice(existing.isTrashed ? '该资料在回收站，可恢复后使用' : '该资料已归档');
         }
@@ -938,6 +1268,7 @@ class AppController extends ChangeNotifier {
     }
     final item = await captureUrl(entry.url);
     entry.savedItemId = item.id;
+    entry.processed = true;
     _save();
   }
 
@@ -985,18 +1316,26 @@ class AppController extends ChangeNotifier {
       }
       if (topic.status == 'synthesizing') return;
       final settings = _promptSettings();
-      final terms = _terms('${topic.title} ${topic.question}');
-      final items = _knowledgeSources
-          .where(
-            (i) =>
-                topic.sourceIds.contains(i.id) ||
-                _terms('${i.title} ${i.body} ${i.analysis?.summary ?? ''}')
-                    .intersection(terms)
-                    .isNotEmpty,
-          )
-          .take(16)
-          .toList();
-      if (items.isEmpty) {
+      final query = '${topic.title} ${topic.question}';
+      final items =
+          _knowledgeSources
+              .where(
+                (i) => topic.selectedSourceIds != null
+                    ? topic.selectedSourceIds!.contains(i.id)
+                    : topic.sourceIds.contains(i.id) ||
+                          relevance(query, itemSearchText(i)) > 0,
+              )
+              .toList()
+            ..sort(
+              (a, b) => relevance(
+                query,
+                itemSearchText(b),
+                title: b.title,
+              ).compareTo(relevance(query, itemSearchText(a), title: a.title)),
+            );
+      final chosen = items.take(16).toList();
+      final scopedTopic = _promptTopic(topic);
+      if (chosen.isEmpty && scopedTopic.contextEntries.isEmpty) {
         topic.error = '尚无相关本地资料，收藏后即可形成综述';
         _save();
         return;
@@ -1013,24 +1352,77 @@ class AppController extends ChangeNotifier {
         final inputs = {
           ..._preferenceInputs(),
           ..._topicInputs(topic),
-          for (final item in items) ..._sourceInputs(item),
+          ..._contextInputs(topic),
+          for (final item in chosen) ..._sourceInputs(item),
         };
         diagnostics.addInputIds(inputs);
-        final result = await diagnostics.step(
-          '生成主题综述',
-          () => intelligence.synthesize(settings, _apiKey, topic, items),
-        );
+        final cacheKey = 'synthesis:$id';
+        final fingerprint = jsonEncode([
+          scopedTopic.question,
+          scopedTopic.selectedSourceIds,
+          scopedTopic.contextEntries.map((entry) => entry.toJson()).toList(),
+          chosen
+              .map(
+                (source) => [
+                  source.id,
+                  source.body,
+                  source.notes,
+                  source.contentVersion,
+                  source.annotations
+                      .map((annotation) => annotation.toJson())
+                      .toList(),
+                  source.analysis?.toJson(),
+                ],
+              )
+              .toList(),
+        ]);
+        final previousFingerprint = _currentJob?.checkpoint['$cacheKey:input'];
+        if (previousFingerprint != null && previousFingerprint != fingerprint) {
+          throw StateError('综述输入已变化，请手动重试以重新生成');
+        }
+        _saveCheckpoint('准备主题输入', {
+          '$cacheKey:input': fingerprint,
+          'inputIds': inputs.toList(),
+        });
+        final cached = _currentJob?.checkpoint[cacheKey];
+        if (cached == null) _saveCheckpoint('生成主题综述', {'requestPending': true});
+        final result = cached is Map
+            ? json(cached)
+            : await diagnostics.step(
+                '生成主题综述',
+                () => intelligence.synthesize(
+                  settings,
+                  _apiKey,
+                  scopedTopic,
+                  chosen,
+                ),
+              );
         _guard(revision);
         final overview = result['overview'];
         if (overview is! String || overview.trim().isEmpty) {
           throw const FormatException('综述为空');
         }
+        _saveCheckpoint('综述已生成', {cacheKey: result, 'requestPending': false});
         topic.overview = overview;
         topic.inputItemIds = inputs.toList();
         topic.sourceIds = strings(result['sourceIds'])
-            .where((id) => items.any((i) => i.id == id))
+            .where((id) => chosen.any((i) => i.id == id))
             .toList();
         topic.status = 'ready';
+        topic.overviewStale = chosen.any(
+          (source) => data.items.any(
+            (current) =>
+                current.id == source.id &&
+                (current.notes != source.notes ||
+                    current.contentVersion != source.contentVersion ||
+                    jsonEncode(
+                          current.annotations.map((a) => a.toJson()).toList(),
+                        ) !=
+                        jsonEncode(
+                          source.annotations.map((a) => a.toJson()).toList(),
+                        )),
+          ),
+        );
       } on DiagnosticCancelled {
         diagnostics.failCurrent('资料状态已变化，本次综述未保存');
       } catch (error) {
@@ -1097,7 +1489,7 @@ class AppController extends ChangeNotifier {
       if (originItemId != null) {
         final origin = _item(originItemId);
         _requireActive(origin);
-        if (!_reusable(origin.analysis?.inputItemIds)) {
+        if (!_analysisReusable(origin)) {
           throw StateError('该研究建议依赖已排除或来源不明的资料，请先重新分析');
         }
         if (!origin.analysis!.questions.any((q) => q.trim() == goal.trim())) {
@@ -1109,7 +1501,7 @@ class AppController extends ChangeNotifier {
           data.items.where(
             (item) =>
                 item.isActive &&
-                _reusable(item.analysis?.inputItemIds) &&
+                _analysisReusable(item) &&
                 item.analysis!.questions.any((q) => q.trim() == goal.trim()),
           ),
         );
@@ -1117,14 +1509,26 @@ class AppController extends ChangeNotifier {
       for (final item in adopted) {
         item.researchAdoptions++;
       }
-      return _executeResearch(
+      await _startUserWork();
+      final run = ResearchRun(
+        id: newId(),
         goal: goal.trim(),
-        topic: topic,
+        topicId: topicId,
         callLimit: callLimit,
-        originInputs: {
+        status: 'queued',
+        inputItemIds: {
+          ..._preferenceInputs(),
+          if (topic != null) ..._topicInputs(topic),
+          if (topic != null && _reusable(topic.inputItemIds))
+            ...topic.inputItemIds!,
           for (final item in adopted) ...item.analysis!.inputItemIds!,
-        },
+        }.toList(),
       );
+      data.runs.insert(0, run);
+      _enqueue('research', run.id);
+      _save();
+      _scheduleQueue();
+      return run;
     },
     type: 'research',
     title: '外部研究',
@@ -1137,28 +1541,80 @@ class AppController extends ChangeNotifier {
     required int callLimit,
     Set<String> originInputs = const {},
     bool Function()? authorized,
+    ResearchRun? existingRun,
   }) async {
     final revision = _lifecycleRevision;
     final settings = _promptSettings();
-    final previous = topic != null && _reusable(topic.inputItemIds)
+    final previous =
+        topic != null && !topic.overviewStale && _reusable(topic.inputItemIds)
         ? topic.overview
         : '';
+    final scopedTopic = topic == null ? null : _promptTopic(topic);
+    final localCandidates = topic == null
+        ? <LibraryItem>[]
+        : _knowledgeSources
+              .where(
+                (source) => topic.selectedSourceIds != null
+                    ? topic.selectedSourceIds!.contains(source.id)
+                    : topic.sourceIds.contains(source.id) ||
+                          relevance(goal, itemSearchText(source)) > 0,
+              )
+              .toList();
+    localCandidates.sort(
+      (a, b) => relevance(
+        goal,
+        itemSearchText(b),
+      ).compareTo(relevance(goal, itemSearchText(a))),
+    );
+    final localSources = localCandidates.take(16).toList();
     final inputs = {
       ...originInputs,
       ..._preferenceInputs(),
       if (topic != null) ..._topicInputs(topic),
+      if (topic != null) ..._contextInputs(topic),
+      for (final source in localSources) ..._sourceInputs(source),
       if (previous.isNotEmpty) ...topic!.inputItemIds!,
     };
     diagnostics.addInputIds(inputs);
-    final run = ResearchRun(
-      id: newId(),
-      goal: goal,
-      topicId: topic?.id,
-      callLimit: callLimit,
-      inputItemIds: inputs.toList(),
-    );
+    final run = existingRun == null
+        ? ResearchRun(
+            id: newId(),
+            goal: goal,
+            topicId: topic?.id,
+            callLimit: callLimit,
+            inputItemIds: inputs.toList(),
+          )
+        : ResearchRun.fromJson(existingRun.toJson());
+    final fingerprintIds =
+        _currentJob?.checkpoint['researchFingerprintIds'] is List
+        ? strings(_currentJob!.checkpoint['researchFingerprintIds']).toSet()
+        : inputs.toSet();
+    String inputFingerprint() => jsonEncode([
+      for (final item in data.items.where(
+        (item) => fingerprintIds.contains(item.id),
+      ))
+        [
+          item.id,
+          item.body,
+          item.notes,
+          item.contentVersion,
+          item.annotations.map((a) => a.toJson()).toList(),
+        ],
+    ]);
+    final fingerprint = inputFingerprint();
+    final previousFingerprint = _currentJob?.checkpoint['researchInput'];
+    if (previousFingerprint != null && previousFingerprint != fingerprint) {
+      throw StateError('研究输入已变化，请重新提交，旧调用预算保留');
+    }
+    _saveCheckpoint('准备研究输入', {
+      'researchInput': fingerprint,
+      'researchFingerprintIds': fingerprintIds.toList(),
+      'inputIds': inputs.toList(),
+    });
     bool allowed() => _valid(revision) && (authorized?.call() ?? true);
     void persist() {
+      run.stale = run.stale || inputFingerprint() != fingerprint;
+      _currentJob?.checkpoint['requestPending'] = run.requestPending;
       inputs.addAll(_researchUrlInputs(run));
       run.inputItemIds = inputs.toList();
       diagnostics.addInputIds(inputs);
@@ -1191,6 +1647,22 @@ class AppController extends ChangeNotifier {
               persist();
             },
             previousReport: previous,
+            localContext: {
+              if (scopedTopic != null)
+                'topic': {
+                  'id': scopedTopic.id,
+                  'title': scopedTopic.title,
+                  'question': scopedTopic.question,
+                },
+              if (scopedTopic != null)
+                'contexts': scopedTopic.contextEntries
+                    .map((entry) => entry.toJson())
+                    .toList(),
+              'sources': localSources
+                  .map(KnowledgeService.itemPayload)
+                  .toList(),
+              'lineage': inputs.toList(),
+            },
           );
           if (run.status == 'failed') diagnostics.failCurrent(run.error);
         },
@@ -1215,18 +1687,19 @@ class AppController extends ChangeNotifier {
       diagnostics.failCurrent(run.error);
     }
     run.completedAt ??= DateTime.now();
-    if (!_disposed) persist();
+    if (allowed()) persist();
     return run;
   }
 
   void _attachResearch(Topic topic, ResearchRun run) {
+    topic.overviewStale = run.stale;
     topic.overview = '${run.report}\n\n本次研究及原始来源：[${run.id}]';
     topic.sourceIds = [run.id];
     topic.inputItemIds = run.inputItemIds?.toList();
   }
 
   Future<void> runDueTracking() async {
-    if (_tracking || _disposed) return;
+    if (_tracking || _disposed || _digestOnly) return;
     _tracking = true;
     try {
       await cleanupExpiredTrash();
@@ -1237,86 +1710,75 @@ class AppController extends ChangeNotifier {
             topic.nextRun?.isAfter(DateTime.now()) == true) {
           continue;
         }
+        final alreadyQueued = runtime.jobs.any(
+          (job) =>
+              ['queued', 'running', 'paused'].contains(job.status) &&
+              job.type == 'research' &&
+              job.checkpoint['tracking'] == true &&
+              data.runs.any(
+                (run) => run.id == job.entityId && run.topicId == topic.id,
+              ),
+        );
+        if (alreadyQueued) continue;
         if (!modelConfigured || !searchConfigured) {
           topic.status = 'waiting';
           topic.error = '待配置模型和搜索服务后补查';
-          _save();
           continue;
         }
-        final scope = topic.question;
-        bool authorized() =>
-            !_disposed &&
-            topic.tracking &&
-            topic.question == scope &&
-            topic.authorizedScope == scope &&
-            _topicSupported(topic);
-        topic.status = 'running';
+        await _startUserWork();
+        final run = ResearchRun(
+          id: newId(),
+          goal: topic.question,
+          topicId: topic.id,
+          callLimit: topic.callLimit,
+          status: 'queued',
+          inputItemIds: {
+            ..._preferenceInputs(),
+            ..._topicInputs(topic),
+            if (_reusable(topic.inputItemIds)) ...topic.inputItemIds!,
+          }.toList(),
+        );
+        data.runs.insert(0, run);
+        _enqueue('research', run.id, checkpoint: {'tracking': true});
+        topic.status = 'queued';
         topic.error = '';
-        _save();
-        try {
-          final run = await _work(
-            () => _executeResearch(
-              goal: scope,
-              topic: topic,
-              callLimit: topic.callLimit,
-              authorized: authorized,
-            ),
-            type: 'tracking',
-            title: '持续追踪：${topic.title}',
-            entityId: topic.id,
-            authorized: authorized,
-          );
-          if (!authorized()) continue;
-          topic.lastRun = DateTime.now();
-          topic.nextRun = DateTime.now().add(
-            Duration(hours: topic.intervalHours),
-          );
-          topic.status = run.status;
-          topic.error = run.error;
-          if (run.meaningful && ['complete', 'budget'].contains(run.status)) {
-            final message = '${topic.title}有值得关注的新研究结果';
-            data.notices.insert(0, message);
-            _save();
-            await native.notify('研究有新发现', message);
-          }
-        } on DiagnosticCancelled {
-          if (topic.tracking) {
-            topic.status = 'pending';
-            topic.error = '资料状态已变化，下次打开时补查';
-          }
-        } catch (error) {
-          topic.status = 'error';
-          topic.error = error.toString();
-          topic.nextRun = DateTime.now().add(
-            Duration(hours: topic.intervalHours),
-          );
-        }
-        _save();
       }
+      _save();
+      _scheduleQueue();
     } finally {
       _tracking = false;
     }
   }
 
   Future<void> resume() async {
-    if (_disposed) return;
+    if (_disposed || _digestOnly) return;
     if (_resuming) {
       _resumeRequested = true;
       return;
     }
     _resuming = true;
     try {
+      await resumeTasks();
+      await refreshToday();
+      await updateNotificationSettings();
+      await refreshNotificationPermission();
       await cleanupExpiredTrash();
       diagnostics.prune();
       do {
         _resumeRequested = false;
-        for (final share in await native.pendingShares()) {
+        final batchRevision = _lifecycleRevision;
+        final pendingShares = await native.pendingShares();
+        _guard(batchRevision);
+        for (final share in pendingShares) {
+          _guard(batchRevision);
+          final shareRevision = _lifecycleRevision;
           var acknowledge = true;
           if (!data.acknowledgedShares.contains(share.id)) {
             if (share.error.isNotEmpty) _notice('分享导入失败：${share.error}');
             for (final path in share.paths) {
+              _guard(shareRevision);
               try {
-                await importFile(path);
+                await importFile(path, analyzeAutomatically: !share.cancelled);
               } on FormatException catch (error) {
                 _notice('分享导入失败：${error.message}');
               } catch (error) {
@@ -1324,32 +1786,36 @@ class AppController extends ChangeNotifier {
                 _notice('分享尚未导入，可重试：$error');
               }
             }
+            _guard(shareRevision);
             if (share.text.trim().isNotEmpty) {
               try {
                 final match = RegExp(r'https?://[^\s<>]+')
                     .firstMatch(share.text);
                 if (match != null) {
-                  await captureUrl(match[0]!);
+                  await captureUrl(
+                    match[0]!,
+                    analyzeAutomatically: !share.cancelled,
+                  );
                 } else {
-                  await captureText(share.text);
+                  await captureText(
+                    share.text,
+                    analyzeAutomatically: !share.cancelled,
+                  );
                 }
               } catch (error) {
                 acknowledge = false;
                 _notice('分享文字尚未导入：$error');
               }
             }
+            _guard(shareRevision);
             if (acknowledge) data.acknowledgedShares.add(share.id);
             _save();
           }
           if (acknowledge) await native.acknowledgeShare(share.id);
         }
       } while (_resumeRequested && !_disposed);
-      unawaited(
-        runDueTracking().catchError((Object error) {
-          lastError = error.toString();
-          if (!_disposed) notifyListeners();
-        }),
-      );
+      await runDueTracking();
+      await _stopServiceIfIdle(force: true);
     } catch (error) {
       lastError = error.toString();
       if (!_disposed) notifyListeners();
@@ -1422,22 +1888,29 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> restore(Uint8List bytes) async {
-    if (busy || _tracking) throw StateError('请等待当前任务结束再恢复');
+    await pauseTasks(cancelled: true);
     _invalidateTasks();
     store.restore(bytes, serviceSettings: data.settings);
     data = store.load();
+    runtime = store.loadRuntime();
     diagnostics.debugEnabled = false;
     diagnostics.clear();
     await cleanupExpiredTrash();
     _recomputeInterests();
     _recoverInterruptedTasks();
     _save();
+    await refreshToday();
+    await updateNotificationSettings();
   }
 
   @override
   void dispose() {
     _disposed = true;
+    for (final timer in _refreshTimers.values) {
+      timer.cancel();
+    }
     native.setShareListener(null);
+    native.setRuntimeEventListener(null);
     intelligence.close();
     diagnostics.close();
     store.close();

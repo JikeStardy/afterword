@@ -59,6 +59,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('资料'), findsWidgets);
       final article = await controller.captureUrl('$base/wechat');
+      await controller.waitForIdle();
       expect(article.status, 'ready');
       expect(article.body, contains('保留原文出处'));
       expect(article.assets, isNotEmpty);
@@ -132,6 +133,7 @@ void main() {
       expect(after, before);
       expect(controller.data.entries.length, 2);
       await controller.selectEntry(controller.data.entries.last.id);
+      await controller.waitForIdle();
       expect(controller.data.items.length, 2);
       final discovered = controller.data.topics.singleWhere(
         (topic) => topic.automatic,
@@ -155,21 +157,27 @@ void main() {
       expect(rendered.pageCount, 1);
       expect(base64Decode(rendered.images.single), isNotEmpty);
       final pdfItem = await controller.importFile(pdf.path);
+      await controller.waitForIdle();
       expect(pdfItem.status, 'ready');
       final image = await File(
         '${directory.path}/fixture.png',
       ).writeAsBytes((await http.get(Uri.parse('$base/image.png'))).bodyBytes);
       final imageItem = await controller.importFile(image.path);
+      await controller.waitForIdle();
       expect(imageItem.status, 'ready');
       await expectLater(
         controller.research(goal: '知识管理', confirmed: false),
         throwsStateError,
       );
-      final run = await controller.research(
+      final submittedRun = await controller.research(
         goal: imageItem.analysis!.questions.first,
         originItemId: imageItem.id,
         confirmed: true,
         callLimit: 4,
+      );
+      await controller.waitForIdle();
+      final run = controller.data.runs.firstWhere(
+        (run) => run.id == submittedRun.id,
       );
       expect(run.status, 'complete');
       expect(run.calls, 4);
@@ -194,6 +202,13 @@ void main() {
 
       await controller.clearNotices();
       await controller.dismissError();
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('资料'),
+        ),
+      );
       await tester.pumpAndSettle();
       await screenshot('library');
       final navigator = tester.state<NavigatorState>(
@@ -381,6 +396,13 @@ void main() {
       await tester.pumpWidget(ReadlaterApp(controller: controller));
       await tester.pumpAndSettle();
       expect(find.text('资料'), findsWidgets);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('资料'),
+        ),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, '已归档'));
       await tester.pumpAndSettle();
       expect(find.text(restoredArticle.title), findsOneWidget);

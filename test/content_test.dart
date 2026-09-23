@@ -36,6 +36,37 @@ void main() {
       expect(article.imageUrls, <String>[
         'https://example.com/assets/cover.jpg',
       ]);
+      expect(
+        article.contentBlocks.map((block) => block.kind),
+        containsAll(['heading', 'paragraph', 'list', 'image']),
+      );
+      expect(article.contentBlocks.first.toJson(), containsPair('level', 1));
+      expect(
+        article.contentBlocks.last.toJson(),
+        containsPair('imageUrl', 'https://example.com/assets/cover.jpg'),
+      );
+    });
+
+    test('keeps code and table blocks with stable ids', () {
+      final article = ContentService.extractHtml('''
+        <article>
+          <h1>Structured reading</h1>
+          <pre>final answer = evidence;</pre>
+          <table>
+            <tr><th>Claim</th><th>Evidence</th></tr>
+            <tr><td>Local first</td><td>Saved notes</td></tr>
+          </table>
+        </article>
+      ''', 'https://example.com/structured');
+
+      final kinds = article.contentBlocks.map((block) => block.kind).toList();
+      expect(kinds, ['heading', 'code', 'table']);
+      expect(article.contentBlocks[1].text, 'final answer = evidence;');
+      expect(article.contentBlocks[2].text, contains('Claim | Evidence'));
+      expect(
+        article.contentBlocks.map((block) => block.id).toSet(),
+        hasLength(3),
+      );
     });
 
     test('prefers WeChat js_content and lazy image data-src', () {

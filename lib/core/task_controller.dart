@@ -1,0 +1,566 @@
+part of 'app_controller.dart';
+
+extension TaskController on AppController {
+  bool get digestOnly => _digestOnly;
+  Future<void> activateInteractive() async {
+    if (_interactiveFuture != null) return _interactiveFuture!;
+    if (!_digestOnly) return;
+    _interactiveFuture = initialize();
+    try {
+      await _interactiveFuture;
+    } finally {
+      _interactiveFuture = null;
+    }
+  }
+
+  void setForeground(bool foreground) {
+    _foreground = foreground;
+  }
+
+  void bindNativeRuntime() {
+    native.setRuntimeEventListener((event) {
+      unawaited(
+        _handleRuntimeEvent(event).catchError((Object error) {
+          if (!_disposed) {
+            lastError = '后台状态更新失败：$error';
+            _emit();
+          }
+        }),
+      );
+    });
+  }
+
+  Future<void> _handleRuntimeEvent(NativeRuntimeEvent event) async {
+    switch (event.kind) {
+      case 'interactive':
+        await activateInteractive();
+        _foreground = true;
+        await resume();
+      case 'cancelAll':
+        await pauseTasks(cancelled: true);
+      case 'timeout':
+        await pauseTasks();
+      case 'digest':
+        await sendDailyDigest();
+      case 'openEntity':
+        pendingNavigation = {
+          'entityType': event.entityType ?? 'today',
+          'entityId': event.entityId ?? '',
+        };
+        _emit();
+    }
+  }
+
+  List<BackgroundJob> get pendingJobs => runtime.jobs
+      .where((job) => ['queued', 'running', 'paused'].contains(job.status))
+      .toList();
+
+  Future<void> _startUserWork() async {
+    if (_digestOnly) throw StateError('每日汇总不会启动分析任务');
+    if (_serviceStarted) return;
+    await native.startBackgroundWork();
+    _serviceStarted = true;
+  }
+
+  String _configurationSignature() => jsonEncode([
+    data.settings.endpoint,
+    data.settings.textModel,
+    data.settings.visionModel,
+    data.settings.searchEndpoint,
+  ]);
+
+  BackgroundJob _enqueue(String type, String entityId, {Json? checkpoint}) {
+    final existing = runtime.jobs
+        .where(
+          (job) =>
+              job.type == type &&
+              job.entityId == entityId &&
+              ['queued', 'running'].contains(job.status),
+        )
+        .firstOrNull;
+    if (existing != null) return existing;
+    final job = BackgroundJob(
+      id: newId(),
+      type: type,
+      entityId: entityId,
+      epoch: runtime.epoch,
+      checkpoint: {'configuration': _configurationSignature(), ...?checkpoint},
+    );
+    runtime.jobs.add(job);
+    return job;
+  }
+
+  void _scheduleQueue() {
+    if (_digestOnly || _disposed || _queueFuture != null) return;
+    if (!runtime.jobs.any((job) => job.status == 'queued')) return;
+    // Do not inherit a capture's diagnostic zone: each durable job owns its scope.
+    _queueFuture = Zone.root.run(() => Future<void>(_drainQueue));
+    unawaited(
+      _queueFuture!.catchError((Object error, StackTrace stack) {
+        if (!_disposed) {
+          lastError = '后台任务暂停：${diagnostics.sanitize(error.toString())}';
+          _emit();
+        }
+      }),
+    );
+  }
+
+  Future<void> waitForIdle() async {
+    while (_queueFuture != null) {
+      await _queueFuture;
+    }
+  }
+
+  bool _jobIsCurrent(BackgroundJob job) =>
+      !_disposed &&
+      job.epoch == runtime.epoch &&
+      job.status == 'running' &&
+      identical(_currentJob, job);
+
+  bool _preflightJob(BackgroundJob job) {
+    String? error;
+    if (job.version != 1 ||
+        !const {
+          'capture',
+          'fetch',
+          'analysis',
+          'synthesis',
+          'research',
+        }.contains(job.type)) {
+      error = '任务版本或类型不受支持，请重新提交';
+    } else if (job.checkpoint['configuration'] != _configurationSignature()) {
+      error = '服务配置已变化，请手动重试';
+    } else if (job.checkpoint['inputIds'] case final List ids) {
+      if (!_reusable(ids.whereType<String>().toList())) error = '任务来源已失效，请重新提交';
+    }
+    if (error == null) return true;
+    job.status = 'paused';
+    job.error = error;
+    job.checkpoint['requiresAttention'] = true;
+    _save();
+    return false;
+  }
+
+  Future<void> _stopServiceIfIdle({bool force = false}) async {
+    if (_active != 0 ||
+        _queueFuture != null ||
+        (!force && !_serviceStarted) ||
+        runtime.jobs.any((job) => ['queued', 'running'].contains(job.status))) {
+      return;
+    }
+    _serviceStarted = false;
+    await native.stopBackgroundWork();
+  }
+
+  Future<void> _drainQueue() async {
+    try {
+      while (!_disposed && !_digestOnly) {
+        final queued = runtime.jobs.where((j) => j.status == 'queued');
+        final job =
+            queued.where((j) => j.checkpoint['tracking'] != true).firstOrNull ??
+            queued.firstOrNull;
+        if (job == null) break;
+        if (job.epoch != runtime.epoch) {
+          job.status = 'cancelled';
+          _save();
+          continue;
+        }
+        if (!_preflightJob(job)) continue;
+        _currentJob = job;
+        job.status = 'running';
+        job.error = '';
+        job.attempts++;
+        _save();
+        try {
+          await _startUserWork();
+          await _publishProgress(job);
+          await _work(
+            () async {
+              switch (job.type) {
+                case 'capture':
+                case 'fetch':
+                case 'analysis':
+                  final item = _item(job.entityId);
+                  _requireActive(item);
+                  if (job.type != 'analysis' &&
+                      job.checkpoint['fetched'] != true) {
+                    await _fetch(item);
+                    if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
+                    if (item.status == 'failed') throw StateError(item.error);
+                    job.checkpoint['fetched'] = true;
+                    _save();
+                  }
+                  if (job.type != 'fetch' &&
+                      job.checkpoint['analyzed'] != true) {
+                    await analyze(item.id);
+                    if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
+                    if (item.status == 'waiting') {
+                      job.status = 'paused';
+                      job.error = item.error;
+                    } else if (item.status != 'ready') {
+                      throw StateError(
+                        item.error.isEmpty ? '分析尚未完成' : item.error,
+                      );
+                    }
+                  }
+                  if (job.type != 'fetch' &&
+                      job.checkpoint['analyzed'] == true &&
+                      job.checkpoint['topicsUpdated'] != true) {
+                    await _updateInterests(item);
+                    _saveCheckpoint('主题更新完成', {'topicsUpdated': true});
+                  }
+                case 'synthesis':
+                  await synthesizeTopic(job.entityId);
+                  final topic = _topic(job.entityId);
+                  if (topic.status != 'ready') throw StateError(topic.error);
+                case 'research':
+                  final run = data.runs.firstWhere(
+                    (run) => run.id == job.entityId,
+                  );
+                  final topic = run.topicId == null
+                      ? null
+                      : _topic(run.topicId!);
+                  if (!_reusable(run.inputItemIds)) throw StateError('研究来源已失效');
+                  await _executeResearch(
+                    goal: run.goal,
+                    topic: topic,
+                    callLimit: run.callLimit,
+                    originInputs: run.inputItemIds!.toSet(),
+                    existingRun: run,
+                    authorized: () =>
+                        _jobIsCurrent(job) &&
+                        (job.checkpoint['tracking'] != true ||
+                            (topic != null &&
+                                topic.tracking &&
+                                topic.authorizedScope == run.goal)),
+                  );
+                  final saved = data.runs.firstWhere((r) => r.id == run.id);
+                  if (saved.status == 'failed' || saved.status == 'paused') {
+                    throw StateError(
+                      saved.error.isEmpty ? '研究已暂停' : saved.error,
+                    );
+                  }
+                  if (topic != null && job.checkpoint['tracking'] == true) {
+                    topic.lastRun = DateTime.now();
+                    topic.nextRun = DateTime.now().add(
+                      Duration(hours: topic.intervalHours),
+                    );
+                    topic.status = saved.status;
+                    if (saved.meaningful) _queueResearchNotice(topic, saved);
+                  }
+              }
+            },
+            type: job.type,
+            title: '后台${_jobTitle(job)}',
+            entityId: job.entityId,
+            authorized: () => _jobIsCurrent(job),
+          );
+          if (_jobIsCurrent(job)) {
+            job.status = 'complete';
+            job.stage = '完成';
+            _queueTaskNotice(job, success: true);
+          }
+        } on DiagnosticCancelled {
+          if (job.status == 'running') job.status = 'cancelled';
+        } catch (error) {
+          if (_jobIsCurrent(job)) {
+            job.error = diagnostics.sanitize(error.toString()).toString();
+            final transient = RegExp(
+              r'\b(408|429|500|502|503|504)\b|SocketException|TimeoutException|网络超时',
+            ).hasMatch(job.error);
+            if (transient && job.attempts < 3) {
+              await Future<void>.delayed(
+                Duration(milliseconds: 400 << (job.attempts - 1)),
+              );
+              if (_jobIsCurrent(job)) job.status = 'queued';
+            } else {
+              job.status = 'paused';
+              job.checkpoint['requiresAttention'] = true;
+              _queueTaskNotice(job, success: false);
+            }
+          }
+        } finally {
+          if (!_disposed) {
+            job.updatedAt = DateTime.now();
+            _save();
+            await _flushNotifications();
+          }
+          _currentJob = null;
+        }
+      }
+    } finally {
+      _currentJob = null;
+      if (!_disposed) {
+        _queueFuture = null;
+        try {
+          await _stopServiceIfIdle();
+        } finally {
+          _emit();
+        }
+        if (runtime.jobs.any((job) => job.status == 'queued')) _scheduleQueue();
+      } else {
+        _queueFuture = null;
+      }
+    }
+  }
+
+  String _jobTitle(BackgroundJob job) => switch (job.type) {
+    'research' => '研究',
+    'synthesis' => '主题更新',
+    'fetch' => '抓取',
+    _ => '分析',
+  };
+
+  Future<void> _publishProgress(BackgroundJob job) async {
+    await native.updateBackgroundProgress(
+      jobId: job.id,
+      title: _jobTitle(job),
+      stage: data.settings.progressNotifications ? job.stage : '正在处理',
+      completed: (job.checkpoint['completed'] as num?)?.toInt() ?? 0,
+      total: (job.checkpoint['total'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  void _saveCheckpoint(String stage, Json values) {
+    final job = _currentJob;
+    if (job == null) return;
+    if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
+    job.stage = stage;
+    job.checkpoint.addAll(values);
+    _save();
+    unawaited(
+      _publishProgress(job).catchError((Object error) {
+        if (!_disposed) {
+          lastError = '进度通知不可用：$error';
+          _emit();
+        }
+      }),
+    );
+  }
+
+  Future<String> queueAnalysis(String itemId) async {
+    _requireActive(_item(itemId));
+    await _startUserWork();
+    final job = _enqueue('analysis', itemId);
+    _save();
+    _scheduleQueue();
+    return job.id;
+  }
+
+  Future<String> queueSynthesis(String topicId) async {
+    _topic(topicId);
+    await _startUserWork();
+    final job = _enqueue('synthesis', topicId);
+    _save();
+    _scheduleQueue();
+    return job.id;
+  }
+
+  Future<void> retryCapture(String itemId) async {
+    final item = _item(itemId);
+    _requireActive(item);
+    if (item.kind != ItemKind.web) throw StateError('只有网页支持重新抓取');
+    await _startUserWork();
+    _enqueue('fetch', itemId);
+    _save();
+    _scheduleQueue();
+  }
+
+  Future<void> retryImages(String itemId) async {
+    _requireActive(_item(itemId));
+    final previous = runtime.jobs.reversed
+        .where(
+          (job) =>
+              job.entityId == itemId && job.checkpoint['imageUrls'] is List,
+        )
+        .firstOrNull;
+    if (previous == null) throw StateError('缺少原始图片地址，请重新抓取正文');
+    await _startUserWork();
+    _enqueue(
+      'fetch',
+      itemId,
+      checkpoint: {
+        'articleFetched': true,
+        'imageUrls': previous.checkpoint['imageUrls'],
+        'savedImages': previous.checkpoint['savedImages'] ?? {},
+      },
+    );
+    _save();
+    _scheduleQueue();
+  }
+
+  Future<void> cancelJob(String jobId) async {
+    final job = runtime.jobs.where((j) => j.id == jobId).firstOrNull;
+    if (job == null || !['queued', 'running', 'paused'].contains(job.status)) {
+      return;
+    }
+    job.status = 'cancelled';
+    job.error = '用户已取消';
+    _markJobInterrupted(job);
+    if (identical(job, _currentJob)) _lifecycleRevision++;
+    final item = data.items.where((i) => i.id == job.entityId).firstOrNull;
+    if (item != null && ['analyzing', 'pending'].contains(item.status)) {
+      item.status = 'interrupted';
+      item.error = '用户已取消；原始资料仍保留';
+    }
+    _save();
+  }
+
+  Future<void> pauseTasks({bool cancelled = false}) async {
+    _lifecycleRevision++;
+    for (final job in pendingJobs) {
+      job.status = cancelled ? 'cancelled' : 'paused';
+      job.error = cancelled ? '用户已取消' : '系统暂停，重新打开后继续';
+      _markJobInterrupted(job);
+      final item = data.items.where((i) => i.id == job.entityId).firstOrNull;
+      if (item != null && ['analyzing', 'pending'].contains(item.status)) {
+        item.status = 'interrupted';
+        item.error = job.error;
+      }
+      final topic = data.topics.where((t) => t.id == job.entityId).firstOrNull;
+      if (topic != null && topic.status == 'synthesizing') {
+        topic.status = 'interrupted';
+      }
+    }
+    _save();
+    await native.stopBackgroundWork();
+    _serviceStarted = false;
+  }
+
+  void _markJobInterrupted(BackgroundJob job) {
+    final run = data.runs.where((run) => run.id == job.entityId).firstOrNull;
+    if (run != null) {
+      run.status = 'interrupted';
+      run.error = job.error;
+    }
+    final topic = data.topics
+        .where((topic) => topic.id == job.entityId)
+        .firstOrNull;
+    if (topic != null && ['queued', 'synthesizing'].contains(topic.status)) {
+      topic.status = 'interrupted';
+      topic.error = job.error;
+    }
+  }
+
+  Future<void> resumeTasks() async {
+    if (_digestOnly || _disposed) return;
+    for (final job in runtime.jobs) {
+      if (job.epoch != runtime.epoch ||
+          job.checkpoint['requiresAttention'] == true) {
+        continue;
+      }
+      if (['running', 'paused'].contains(job.status) &&
+          !identical(job, _currentJob)) {
+        if (job.checkpoint['inputIds'] case final List inputs) {
+          if (!_reusable(inputs.whereType<String>().toList())) {
+            job.status = 'cancelled';
+            job.error = '研究来源已失效，请重新提交';
+            continue;
+          }
+        }
+        if (job.checkpoint['configuration'] != _configurationSignature()) {
+          job.status = 'paused';
+          job.error = '服务配置已变化，请重新提交';
+          job.checkpoint['requiresAttention'] = true;
+          continue;
+        }
+        job.status = 'queued';
+        if (job.checkpoint['requestPending'] == true) {
+          _notice('上次请求结果未保存，恢复可能再次调用服务并产生费用');
+        }
+        if (job.type == 'research' &&
+            data.runs.any(
+              (run) => run.id == job.entityId && run.requestPending,
+            )) {
+          _notice('上次研究请求结果未保存，恢复可能重复计费；原调用预算继续累计');
+        }
+      }
+    }
+    _save();
+    if (runtime.jobs.any((j) => j.status == 'queued')) {
+      await _startUserWork();
+      _scheduleQueue();
+    }
+    await _flushNotifications();
+  }
+
+  void _queueTaskNotice(BackgroundJob job, {required bool success}) {
+    if (job.checkpoint['tracking'] == true && success) return;
+    if (!data.settings.resultNotifications) return;
+    final id = '${job.id}:${job.status}:${job.attempts}';
+    if (runtime.outbox.any((entry) => entry.id == id)) return;
+    runtime.outbox.add(
+      PendingNotification(
+        id: id,
+        channel: 'results',
+        title: success ? '${_jobTitle(job)}已完成' : '${_jobTitle(job)}需要处理',
+        body: success ? '点击查看结果' : job.error,
+        entityType: job.type == 'research'
+            ? 'run'
+            : job.type == 'synthesis'
+            ? 'topic'
+            : 'item',
+        entityId: job.entityId,
+      ),
+    );
+  }
+
+  Future<void> _flushNotifications() async {
+    for (final entry
+        in runtime.outbox.where((entry) => !entry.delivered).toList()) {
+      if (_disposed) return;
+      final enabled = switch (entry.channel) {
+        'results' => data.settings.resultNotifications,
+        'research' => data.settings.researchNotifications,
+        'digest' =>
+          data.settings.digestEnabled && data.settings.digestNotifications,
+        _ => false,
+      };
+      final expiredDigest =
+          entry.channel == 'digest' &&
+          entry.id != 'digest:${_localDay(DateTime.now())}';
+      final sourceExcluded = switch (entry.entityType) {
+        'item' => !data.items.any(
+          (item) => item.id == entry.entityId && item.isActive,
+        ),
+        'run' => !data.runs.any(
+          (run) => run.id == entry.entityId && _reusableRun(run),
+        ),
+        'topic' => !data.topics.any(
+          (topic) =>
+              topic.id == entry.entityId &&
+              _topicSupported(topic) &&
+              _reusable(topic.inputItemIds) &&
+              topic.snoozedUntil?.isAfter(DateTime.now()) != true,
+        ),
+        _ => false,
+      };
+      if (!enabled || expiredDigest || sourceExcluded) {
+        runtime.outbox.remove(entry);
+        _save();
+        continue;
+      }
+      try {
+        final posted = await native.publishNotification(
+          id: entry.id,
+          channel: entry.channel,
+          title: entry.title,
+          body: entry.body,
+          entityType: entry.entityType,
+          entityId: entry.entityId,
+        );
+        if (!posted) {
+          notificationsAllowed = await native.notificationStatus();
+          _save();
+          continue;
+        }
+        entry.delivered = true;
+        _save();
+      } catch (error) {
+        lastError = '通知发送失败：$error';
+        _emit();
+        return;
+      }
+    }
+  }
+}

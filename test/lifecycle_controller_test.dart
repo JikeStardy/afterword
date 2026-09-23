@@ -78,6 +78,7 @@ class RecordingIntelligence extends IntelligenceService {
     required bool Function() authorized,
     required Future<void> Function() onProgress,
     String previousReport = '',
+    Json localContext = const {},
   }) async {
     if (!authorized()) throw StateError('paused');
     previous = previousReport;
@@ -364,7 +365,9 @@ void main() {
     ai.researchSources = [
       ResearchSource(id: 'S1', title: '知识管理', url: a.url, snippet: '排除的证据'),
     ];
-    final run = await controller.research(goal: '知识管理', confirmed: true);
+    final queued = await controller.research(goal: '知识管理', confirmed: true);
+    await controller.waitForIdle();
+    final run = controller.data.runs.firstWhere((run) => run.id == queued.id);
     expect(run.inputItemIds, contains('a'));
     final b = source('b');
     controller.data.items.add(b);
@@ -392,7 +395,9 @@ void main() {
     final id = controller.data.items.single.id;
     await controller.archiveItems([id]);
     store.release.complete();
-    await expectLater(capture, throwsA(isA<DiagnosticCancelled>()));
+    await capture;
+    await controller.waitForIdle();
+    expect(controller.runtime.jobs.single.status, 'cancelled');
     expect(controller.data.items.single.assets, isEmpty);
     expect(Directory('${directory.path}/assets').listSync(), isEmpty);
   });

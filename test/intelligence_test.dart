@@ -66,6 +66,181 @@ void main() {
     });
     expect(input['item']['feedback'], -1);
   });
+  test('analysis prompt includes structured content and validates evidence anchors', () async {
+    Map<String, dynamic>? body;
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return completion({
+          'summary': '结构化认识 [a]',
+          'insights': ['结构化内容可定位 [a]'],
+          'structuredInsights': [
+            {
+              'id': 's1',
+              'finding': '发现',
+              'change': '补充旧认识',
+              'impact': '影响复查安排',
+              'evidence': [
+                {
+                  'sourceId': 'a',
+                  'sourceVersion': 1,
+                  'blockId': 'body-1',
+                  'quote': '第一段证据',
+                },
+              ],
+              'unknowns': ['长期效果'],
+              'verdict': 'new',
+            },
+          ],
+          'sourceIds': ['a'],
+        });
+      }),
+    );
+
+    final result = await service.analyze(
+      AppSettings(textModel: 'm'),
+      'key',
+      LibraryItem(
+        id: 'a',
+        title: '文章',
+        kind: ItemKind.text,
+        body: '第一段证据\n\n第二段',
+        notes: '我的判断',
+      ),
+      [],
+    );
+
+    expect(result.summary, '结构化认识 [a]');
+    final prompt = body!['messages'][1]['content'] as String;
+    final input =
+        jsonDecode(prompt.split('输入数据：').last) as Map<String, dynamic>;
+    expect(input['item']['contentBlocks'].first['id'], 'body-1');
+    expect(input['item']['notes'], '我的判断');
+    expect(prompt, contains('structuredInsights'));
+  });
+
+  test('analysis rejects fabricated structured evidence anchors', () async {
+    final service = IntelligenceService(
+      client: MockClient(
+        (_) async => completion({
+          'summary': '认识',
+          'structuredInsights': [
+            {
+              'id': 'pdf-anchor',
+              'finding': '发现',
+              'change': '改变',
+              'impact': '影响',
+              'evidence': [
+                {
+                  'sourceId': 'a',
+                  'sourceVersion': 1,
+                  'blockId': 'missing',
+                  'quote': '不存在',
+                },
+              ],
+            },
+          ],
+          'sourceIds': ['a'],
+        }),
+      ),
+    );
+
+    await expectLater(
+      service.analyze(
+        AppSettings(textModel: 'm'),
+        'key',
+        LibraryItem(id: 'a', title: '文章', kind: ItemKind.text, body: '正文'),
+        [],
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('unresolved structured evidence must retain the quote', () async {
+    final service = IntelligenceService(
+      client: MockClient(
+        (_) async => completion({
+          'summary': '认识',
+          'structuredInsights': [
+            {
+              'id': 'pdf-anchor',
+              'finding': '发现',
+              'change': '改变',
+              'impact': '影响',
+              'evidence': [
+                {'sourceId': 'a', 'unresolved': true},
+              ],
+            },
+          ],
+          'sourceIds': ['a'],
+        }),
+      ),
+    );
+
+    await expectLater(
+      service.analyze(
+        AppSettings(textModel: 'm'),
+        'key',
+        LibraryItem(id: 'a', title: '文章', kind: ItemKind.text, body: '正文'),
+        [],
+      ),
+      throwsFormatException,
+    );
+  });
+  test('pdf page evidence is accepted only for pdf sources', () async {
+    final service = IntelligenceService(
+      client: MockClient(
+        (_) async => completion({
+          'summary': '认识',
+          'structuredInsights': [
+            {
+              'id': 'pdf-anchor',
+              'finding': '发现',
+              'change': '改变',
+              'impact': '影响',
+              'evidence': [
+                {'sourceId': 'a', 'sourceVersion': 1, 'pdfPage': 3},
+              ],
+            },
+          ],
+          'sourceIds': ['a'],
+        }),
+      ),
+    );
+
+    await expectLater(
+      service.analyze(
+        AppSettings(textModel: 'm'),
+        'key',
+        LibraryItem(id: 'a', title: '文章', kind: ItemKind.text, body: '正文'),
+        [],
+      ),
+      throwsFormatException,
+    );
+
+    final result = await service.analyze(
+      AppSettings(textModel: 'm'),
+      'key',
+      LibraryItem(
+        id: 'a',
+        title: 'PDF',
+        kind: ItemKind.pdf,
+        body: '正文',
+        pdfPageCount: 3,
+      ),
+      [],
+    );
+    expect(result.structuredInsights.single.evidence.single.pdfPage, 3);
+    await expectLater(
+      service.analyze(
+        AppSettings(textModel: 'm'),
+        'key',
+        LibraryItem(id: 'a', title: 'PDF', kind: ItemKind.pdf, pdfPageCount: 2),
+        [],
+      ),
+      throwsFormatException,
+    );
+  });
   test(
     'multimodal analysis uses configured vision model and image blocks',
     () async {
@@ -157,6 +332,243 @@ void main() {
       expect(run.status, 'budget');
     },
   );
+  test(
+    'research resumes after a completed search without repeating it',
+    () async {
+      var searchRequests = 0, modelRequests = 0;
+      final service = IntelligenceService(
+        client: MockClient((request) async {
+          if (request.url.path == '/search') {
+            searchRequests++;
+            return http.Response(jsonEncode({'results': []}), 200);
+          }
+          modelRequests++;
+          return completion({
+            'report': '恢复比较 [S1]',
+            'nextQuery': '',
+            'meaningful': true,
+          });
+        }),
+      );
+      final run = ResearchRun(
+        id: 'r',
+        goal: '问题',
+        callLimit: 2,
+        calls: 1,
+        steps: ['检索：问题', '检索完成：问题'],
+        sources: [
+          ResearchSource(
+            id: 'S1',
+            title: '已有来源',
+            url: 'https://example.com/a',
+            snippet: '证据',
+          ),
+        ],
+      );
+
+      await service.research(
+        AppSettings(textModel: 'm'),
+        'key',
+        'search',
+        run,
+        authorized: () => true,
+        onProgress: () async {},
+      );
+
+      expect(searchRequests, 0);
+      expect(modelRequests, 1);
+      expect(run.calls, 2);
+      expect(run.status, 'complete');
+      expect(run.report, contains('S1'));
+    },
+  );
+  test(
+    'research resumes a saved report without repeating provider calls',
+    () async {
+      var requests = 0;
+      final service = IntelligenceService(
+        client: MockClient((request) async {
+          requests++;
+          if (request.url.path == '/search') {
+            return http.Response(jsonEncode({'results': []}), 200);
+          }
+          return completion({
+            'report': '不应再次生成 [S1]',
+            'nextQuery': '',
+            'meaningful': true,
+          });
+        }),
+      );
+      final run = ResearchRun(
+        id: 'r',
+        goal: '问题',
+        callLimit: 4,
+        calls: 2,
+        report: '已保存报告 [S1]',
+        steps: ['检索：问题', '检索完成：问题', '比较证据并检查研究缺口'],
+        sources: [
+          ResearchSource(
+            id: 'S1',
+            title: '已有来源',
+            url: 'https://example.com/a',
+            snippet: '证据',
+          ),
+        ],
+      );
+
+      await service.research(
+        AppSettings(textModel: 'm'),
+        'key',
+        'search',
+        run,
+        authorized: () => true,
+        onProgress: () async {},
+      );
+
+      expect(requests, 0);
+      expect(run.calls, 2);
+      expect(run.status, 'complete');
+      expect(run.report, '已保存报告 [S1]');
+    },
+  );
+  test(
+    'research resumes a second round compare without repeating search',
+    () async {
+      var searchRequests = 0, modelRequests = 0;
+      final service = IntelligenceService(
+        client: MockClient((request) async {
+          if (request.url.path == '/search') {
+            searchRequests++;
+            return http.Response(jsonEncode({'results': []}), 200);
+          }
+          modelRequests++;
+          return completion({
+            'report': '第二轮更新 [S2]',
+            'nextQuery': '',
+            'meaningful': true,
+          });
+        }),
+      );
+      final run = ResearchRun(
+        id: 'r',
+        goal: '问题',
+        callLimit: 4,
+        calls: 3,
+        report: '第一轮报告 [S1]',
+        pendingStage: 'compare',
+        pendingQuery: '问题\n补充查证（限定原主题）：新证据',
+        steps: [
+          '检索：问题',
+          '检索完成：问题',
+          '比较证据并检查研究缺口',
+          '待查：问题\n补充查证（限定原主题）：新证据',
+          '检索：问题\n补充查证（限定原主题）：新证据',
+          '检索完成：问题\n补充查证（限定原主题）：新证据',
+        ],
+        sources: [
+          ResearchSource(
+            id: 'S1',
+            title: '旧来源',
+            url: 'https://example.com/old',
+            snippet: '旧证据',
+          ),
+          ResearchSource(
+            id: 'S2',
+            title: '新来源',
+            url: 'https://example.com/new',
+            snippet: '新证据',
+          ),
+        ],
+      );
+
+      await service.research(
+        AppSettings(textModel: 'm'),
+        'key',
+        'search',
+        run,
+        authorized: () => true,
+        onProgress: () async {},
+      );
+
+      expect(searchRequests, 0);
+      expect(modelRequests, 1);
+      expect(run.calls, 4);
+      expect(run.status, 'complete');
+      expect(run.report, '第二轮更新 [S2]');
+      expect(run.pendingStage, isEmpty);
+    },
+  );
+  test('research keeps a completed exhausted-budget report complete', () async {
+    var requests = 0;
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        requests++;
+        return completion({'report': '不应调用 [S1]', 'nextQuery': ''});
+      }),
+    );
+    final run = ResearchRun(
+      id: 'r',
+      goal: '问题',
+      callLimit: 4,
+      calls: 4,
+      report: '最终报告 [S2]',
+      steps: [
+        '检索：问题',
+        '检索完成：问题',
+        '比较证据并检查研究缺口',
+        '待查：历史追查',
+        '检索：历史追查',
+        '检索完成：历史追查',
+        '比较证据并检查研究缺口',
+      ],
+      sources: [
+        ResearchSource(
+          id: 'S2',
+          title: '最终来源',
+          url: 'https://example.com/final',
+          snippet: '最终证据',
+        ),
+      ],
+    );
+
+    await service.research(
+      AppSettings(textModel: 'm'),
+      'key',
+      'search',
+      run,
+      authorized: () => true,
+      onProgress: () async {},
+    );
+
+    expect(requests, 0);
+    expect(run.status, 'complete');
+    expect(run.report, '最终报告 [S2]');
+  });
+  test('research exposes requestPending before remote calls finish', () async {
+    final seenPending = <bool>[];
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        return request.url.path == '/search'
+            ? http.Response(jsonEncode({'results': []}), 200)
+            : completion({'report': 'report', 'nextQuery': ''});
+      }),
+    );
+    final run = ResearchRun(id: 'r', goal: '问题', callLimit: 2);
+
+    await service.research(
+      AppSettings(textModel: 'm'),
+      'key',
+      'search',
+      run,
+      authorized: () => true,
+      onProgress: () async {
+        seenPending.add(run.requestPending);
+      },
+    );
+
+    expect(seenPending, contains(true));
+    expect(run.requestPending, isFalse);
+  });
   test('research checks revocation between remote operations', () async {
     var authorized = true, requests = 0;
     final service = IntelligenceService(
@@ -246,6 +658,94 @@ void main() {
       );
     },
   );
+  test('topic synthesis uses selected confirmed context and explicit empty source scope', () async {
+    Map<String, dynamic>? body;
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return completion({'overview': '只基于背景', 'sourceIds': []});
+      }),
+    );
+
+    await service.synthesize(
+      AppSettings(textModel: 'm'),
+      'key',
+      Topic(
+        id: 't',
+        title: '主题',
+        question: '问题',
+        selectedSourceIds: [],
+        selectedContextIds: ['confirmed', 'draft'],
+        contextEntries: [
+          ContextEntry(
+            id: 'confirmed',
+            kind: 'judgement',
+            text: '用户确认判断',
+            confirmed: true,
+          ),
+          ContextEntry(
+            id: 'draft',
+            kind: 'judgement',
+            text: 'AI 待确认判断',
+            confirmed: false,
+          ),
+          ContextEntry(
+            id: 'inactive',
+            kind: 'background',
+            text: '停用背景',
+            confirmed: true,
+            active: false,
+          ),
+        ],
+      ),
+      [LibraryItem(id: 'a', title: 'a', kind: ItemKind.text, body: '正文')],
+    );
+
+    final prompt = body!['messages'][1]['content'] as String;
+    final payload = jsonDecode(prompt.split('\n').last) as Map<String, dynamic>;
+    expect(payload['sources'], isEmpty);
+    expect(payload['contexts'], hasLength(1));
+    expect(payload['contexts'].single['text'], '用户确认判断');
+  });
+  test('external research prompt carries provided local context', () async {
+    String? modelPrompt;
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        if (request.url.path == '/search') {
+          return http.Response(
+            jsonEncode({
+              'results': [
+                {
+                  'title': 'source',
+                  'url': 'https://example.com/a',
+                  'content': 'evidence',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        modelPrompt = request.body;
+        return completion({'report': 'report [S1]', 'nextQuery': ''});
+      }),
+    );
+
+    await service.research(
+      AppSettings(textModel: 'm'),
+      'key',
+      'search',
+      ResearchRun(id: 'r', goal: 'question', callLimit: 2),
+      authorized: () => true,
+      onProgress: () async {},
+      localContext: {
+        'contexts': [
+          {'id': 'c1', 'text': '用户确认背景'},
+        ],
+      },
+    );
+
+    expect(modelPrompt, contains('用户确认背景'));
+  });
   test('external report with a fabricated nonstandard citation is not marked complete', () async {
     final service = IntelligenceService(
       client: MockClient((request) async {

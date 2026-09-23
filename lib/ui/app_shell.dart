@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../core/app_controller.dart';
 import '../core/models.dart';
+import 'item_detail.dart';
 import 'library_page.dart';
+import 'research_detail.dart';
 import 'research_page.dart';
 import 'rss_page.dart';
 import 'settings_page.dart';
+import 'today_page.dart';
 
 class ReadlaterShell extends StatefulWidget {
   const ReadlaterShell({super.key, required this.controller});
@@ -18,14 +21,17 @@ class ReadlaterShell extends StatefulWidget {
 
 class _ReadlaterShellState extends State<ReadlaterShell> {
   int _index = 0;
+  bool _navigationScheduled = false;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
+        _schedulePendingNavigation(context);
         final data = widget.controller.data;
         final pages = <Widget>[
+          TodayPage(controller: widget.controller, data: data),
           LibraryPage(controller: widget.controller, data: data),
           RssPage(controller: widget.controller, data: data),
           ResearchPage(controller: widget.controller, data: data),
@@ -57,6 +63,11 @@ class _ReadlaterShellState extends State<ReadlaterShell> {
                       setState(() => _index = value),
                   destinations: const [
                     NavigationDestination(
+                      icon: Icon(Icons.today_outlined),
+                      selectedIcon: Icon(Icons.today),
+                      label: '今日',
+                    ),
+                    NavigationDestination(
                       icon: Icon(Icons.collections_bookmark_outlined),
                       selectedIcon: Icon(Icons.collections_bookmark),
                       label: '资料',
@@ -85,6 +96,58 @@ class _ReadlaterShellState extends State<ReadlaterShell> {
         );
       },
     );
+  }
+
+  void _schedulePendingNavigation(BuildContext context) {
+    if (_navigationScheduled || widget.controller.pendingNavigation == null) {
+      return;
+    }
+    _navigationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigationScheduled = false;
+      if (!mounted) return;
+      final navigation = widget.controller.pendingNavigation;
+      if (navigation == null) return;
+      widget.controller.consumeNavigation();
+      _openNavigation(context, navigation);
+    });
+  }
+
+  void _openNavigation(BuildContext context, Map<String, String> navigation) {
+    final type = navigation['entityType'] ?? '';
+    final id = navigation['entityId'] ?? '';
+    if (type == 'today') {
+      setState(() => _index = 0);
+      return;
+    }
+    if (type == 'item') {
+      final item = widget.controller.data.items
+          .where((candidate) => candidate.id == id)
+          .firstOrNull;
+      if (item == null) {
+        setState(() => _index = 1);
+        return;
+      }
+      setState(() => _index = 1);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              ArticleDetailPage(controller: widget.controller, item: item),
+        ),
+      );
+      return;
+    }
+    if (type == 'topic') {
+      setState(() => _index = 3);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              TopicDetailPage(controller: widget.controller, topicId: id),
+        ),
+      );
+      return;
+    }
+    setState(() => _index = 3);
   }
 }
 

@@ -46,6 +46,8 @@ void main() {
   ) async {
     final c = _controllerWith([article('one'), article('two')]);
     await tester.pumpWidget(ReadlaterApp(controller: c));
+    await tester.tap(find.text('资料').last);
+    await tester.pumpAndSettle();
     await tester.longPress(find.text('阅读资料 one'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('全选当前结果'));
@@ -96,6 +98,8 @@ void main() {
     final c = _controllerWith([article('one'), article('two')]);
     await c.archiveItems(['one']);
     await tester.pumpWidget(ReadlaterApp(controller: c));
+    await tester.tap(find.text('资料').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('已归档'));
     await tester.enterText(find.byType(SearchBar), 'one');
     await tester.pump();
@@ -268,6 +272,8 @@ void main() {
           home: ReadlaterShell(controller: c),
         ),
       );
+      await tester.tap(find.text('资料').last);
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('回收站'));
       await tester.tap(find.text('回收站'));
       await tester.pumpAndSettle();

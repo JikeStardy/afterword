@@ -6,6 +6,7 @@ class SharedInput {
     required this.text,
     required this.paths,
     this.error = '',
+    this.cancelled = false,
   });
 
   factory SharedInput.fromMap(Map<Object?, Object?> map) {
@@ -16,6 +17,7 @@ class SharedInput {
           .whereType<String>()
           .toList(growable: false),
       error: map['error'] as String? ?? '',
+      cancelled: map['cancelled'] == true,
     );
   }
 
@@ -23,6 +25,7 @@ class SharedInput {
   final String text;
   final List<String> paths;
   final String error;
+  final bool cancelled;
 }
 
 class PdfPages {
@@ -41,6 +44,59 @@ class PdfPages {
   final List<String> images;
 }
 
+class NativeRuntimeContext {
+  const NativeRuntimeContext({
+    required this.mode,
+    this.openedEntityType,
+    this.openedEntityId,
+    this.launchedFromNotification = false,
+    this.recentEvents = const <NativeRuntimeEvent>[],
+  });
+
+  factory NativeRuntimeContext.fromMap(Map<Object?, Object?> map) {
+    return NativeRuntimeContext(
+      mode: map['mode'] as String? ?? 'interactive',
+      openedEntityType: map['openedEntityType'] as String?,
+      openedEntityId: map['openedEntityId'] as String?,
+      launchedFromNotification: map['launchedFromNotification'] == true,
+      recentEvents:
+          ((map['recentEvents'] as List<Object?>?) ?? const <Object?>[])
+              .whereType<Map<Object?, Object?>>()
+              .map(NativeRuntimeEvent.fromMap)
+              .toList(growable: false),
+    );
+  }
+
+  final String mode;
+  final String? openedEntityType;
+  final String? openedEntityId;
+  final bool launchedFromNotification;
+  final List<NativeRuntimeEvent> recentEvents;
+}
+
+class NativeRuntimeEvent {
+  const NativeRuntimeEvent({
+    required this.kind,
+    this.entityType,
+    this.entityId,
+    this.message,
+  });
+
+  factory NativeRuntimeEvent.fromMap(Map<Object?, Object?> map) {
+    return NativeRuntimeEvent(
+      kind: map['kind'] as String? ?? '',
+      entityType: map['entityType'] as String?,
+      entityId: map['entityId'] as String?,
+      message: map['message'] as String?,
+    );
+  }
+
+  final String kind;
+  final String? entityType;
+  final String? entityId;
+  final String? message;
+}
+
 class NativeBridge {
   const NativeBridge({
     MethodChannel channel = const MethodChannel('readlater/native'),
@@ -49,17 +105,51 @@ class NativeBridge {
   const NativeBridge._(this._channel);
 
   final MethodChannel _channel;
+  static final Expando<_NativeBridgeListeners> _listeners =
+      Expando<_NativeBridgeListeners>();
 
   void setShareListener(void Function()? listener) {
-    if (listener == null) {
+    _listenerState.share = listener;
+    _installHandler();
+  }
+
+  void setRuntimeEventListener(
+    void Function(NativeRuntimeEvent event)? listener,
+  ) {
+    _listenerState.runtimeEvent = listener;
+    _installHandler();
+  }
+
+  _NativeBridgeListeners get _listenerState =>
+      _listeners[this] ??= _NativeBridgeListeners();
+
+  void _installHandler() {
+    final listeners = _listenerState;
+    if (listeners.share == null && listeners.runtimeEvent == null) {
       _channel.setMethodCallHandler(null);
       return;
     }
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'sharesReady') {
-        listener();
+        listeners.share?.call();
+      } else if (call.method == 'runtimeEvent') {
+        final arguments = call.arguments;
+        if (arguments is Map<Object?, Object?>) {
+          listeners.runtimeEvent?.call(NativeRuntimeEvent.fromMap(arguments));
+        }
       }
     });
+  }
+
+  Future<NativeRuntimeContext> runtimeContext() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'runtimeContext',
+      );
+      return NativeRuntimeContext.fromMap(result ?? const <Object?, Object?>{});
+    } on MissingPluginException {
+      return const NativeRuntimeContext(mode: 'interactive');
+    }
   }
 
   Future<List<SharedInput>> pendingShares() async {
@@ -120,6 +210,97 @@ class NativeBridge {
     }
   }
 
+  Future<void> startBackgroundWork() async {
+    try {
+      await _channel.invokeMethod<void>('startBackgroundWork');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> updateBackgroundProgress({
+    required String jobId,
+    required String title,
+    required String stage,
+    int? completed,
+    int? total,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('updateBackgroundProgress', {
+        'jobId': jobId,
+        'title': title,
+        'stage': stage,
+        'completed': completed,
+        'total': total,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> stopBackgroundWork() async {
+    try {
+      await _channel.invokeMethod<void>('stopBackgroundWork');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<void> configureDigest({
+    required bool enabled,
+    required int hour,
+    required int minute,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('configureDigest', {
+        'enabled': enabled,
+        'hour': hour,
+        'minute': minute,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Future<bool> notificationStatus() async {
+    try {
+      return await _channel.invokeMethod<bool>('notificationStatus') ?? false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  Future<bool> publishNotification({
+    required String id,
+    required String channel,
+    required String title,
+    required String body,
+    String? entityType,
+    String? entityId,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('publishNotification', {
+            'id': id,
+            'channel': channel,
+            'title': title,
+            'body': body,
+            'entityType': entityType,
+            'entityId': entityId,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  Future<void> finishDigest() async {
+    try {
+      await _channel.invokeMethod<void>('finishDigest');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
   Future<void> requestNotificationPermission() async {
     try {
       await _channel.invokeMethod<void>('requestNotificationPermission');
@@ -151,4 +332,9 @@ class NativeBridge {
       throw UnsupportedError('当前平台尚不支持打开来源链接');
     }
   }
+}
+
+class _NativeBridgeListeners {
+  void Function()? share;
+  void Function(NativeRuntimeEvent event)? runtimeEvent;
 }
