@@ -14,6 +14,14 @@ extension TaskController on AppController {
   }
 
   void setForeground(bool foreground) {
+    if (_foreground != foreground) {
+      diagnostics.log(
+        DiagnosticLevel.info,
+        'lifecycle',
+        'foreground.change',
+        data: {'foreground': foreground},
+      );
+    }
     _foreground = foreground;
   }
 
@@ -31,6 +39,7 @@ extension TaskController on AppController {
   }
 
   Future<void> _handleRuntimeEvent(NativeRuntimeEvent event) async {
+    logRuntimeEvent(event);
     switch (event.kind) {
       case 'interactive':
         await activateInteractive();
@@ -58,8 +67,28 @@ extension TaskController on AppController {
   Future<void> _startUserWork() async {
     if (_digestOnly) throw StateError('每日汇总不会启动分析任务');
     if (_serviceStarted) return;
-    await native.startBackgroundWork();
-    _serviceStarted = true;
+    _logDiagnosticEvent(
+      DiagnosticLevel.info,
+      'background',
+      'service.start.request',
+    );
+    try {
+      await native.startBackgroundWork();
+      _serviceStarted = true;
+      _logDiagnosticEvent(
+        DiagnosticLevel.info,
+        'background',
+        'service.start.success',
+      );
+    } catch (error) {
+      _logDiagnosticEvent(
+        DiagnosticLevel.error,
+        'background',
+        'service.start.failure',
+        error: error,
+      );
+      rethrow;
+    }
   }
 
   String _configurationSignature() => jsonEncode([
@@ -149,7 +178,27 @@ extension TaskController on AppController {
       return;
     }
     _serviceStarted = false;
-    await native.stopBackgroundWork();
+    _logDiagnosticEvent(
+      DiagnosticLevel.info,
+      'background',
+      'service.stop.request',
+      data: {'force': force},
+    );
+    try {
+      await native.stopBackgroundWork();
+      _logDiagnosticEvent(
+        DiagnosticLevel.info,
+        'background',
+        'service.stop.success',
+      );
+    } catch (error) {
+      _logDiagnosticEvent(
+        DiagnosticLevel.warn,
+        'background',
+        'service.stop.failure',
+        error: error,
+      );
+    }
   }
 
   Future<void> _drainQueue() async {
@@ -407,6 +456,12 @@ extension TaskController on AppController {
   }
 
   Future<void> pauseTasks({bool cancelled = false}) async {
+    diagnostics.log(
+      DiagnosticLevel.warn,
+      'background',
+      'tasks.pause',
+      data: {'cancelled': cancelled, 'pending': pendingJobs.length},
+    );
     _lifecycleRevision++;
     for (final job in pendingJobs) {
       job.status = cancelled ? 'cancelled' : 'paused';
@@ -444,6 +499,12 @@ extension TaskController on AppController {
 
   Future<void> resumeTasks() async {
     if (_digestOnly || _disposed) return;
+    diagnostics.log(
+      DiagnosticLevel.info,
+      'background',
+      'tasks.resume.start',
+      data: {'jobs': runtime.jobs.length},
+    );
     for (final job in runtime.jobs) {
       if (job.epoch != runtime.epoch ||
           job.checkpoint['requiresAttention'] == true) {
@@ -482,6 +543,12 @@ extension TaskController on AppController {
       _scheduleQueue();
     }
     await _flushNotifications();
+    diagnostics.log(
+      DiagnosticLevel.info,
+      'background',
+      'tasks.resume.complete',
+      data: {'queued': runtime.jobs.where((j) => j.status == 'queued').length},
+    );
   }
 
   void _queueTaskNotice(BackgroundJob job, {required bool success}) {

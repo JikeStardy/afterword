@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpDate;
+import 'dart:io' show HandshakeException, HttpDate, OSError, SocketException;
 import 'dart:typed_data';
 
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
+import 'package:readlater/core/diagnostics.dart';
 import 'package:readlater/core/models.dart';
 import 'package:xml/xml.dart' as xml;
 
@@ -66,6 +67,7 @@ class ContentService {
 
   final http.Client _client;
   final Duration timeout;
+  int _requestSequence = 0;
 
   ContentService({
     http.Client? client,
@@ -75,10 +77,50 @@ class ContentService {
   Future<ExtractedArticle> fetchArticle(String url) async {
     final uri = _validatedHttpUri(url);
     final fetched = await _fetchBytes(uri, maxArticleBytes);
-    return extractHtml(
-      utf8.decode(fetched.bytes, allowMalformed: true),
-      fetched.url.toString(),
+    final stopwatch = Stopwatch()..start();
+    DiagnosticScope.log(
+      DiagnosticLevel.debug,
+      'content',
+      'parse.start',
+      data: {
+        'kind': 'article',
+        'url': fetched.url,
+        'bytes': fetched.bytes.length,
+      },
     );
+    try {
+      final article = extractHtml(
+        utf8.decode(fetched.bytes, allowMalformed: true),
+        fetched.url.toString(),
+      );
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'content',
+        'parse.success',
+        data: {
+          'kind': 'article',
+          'url': fetched.url,
+          'durationMs': stopwatch.elapsedMilliseconds,
+          'blocks': article.contentBlocks.length,
+        },
+      );
+      return article;
+    } catch (error, stackTrace) {
+      DiagnosticScope.log(
+        DiagnosticLevel.error,
+        'content',
+        'parse.failure',
+        data: {
+          'kind': 'article',
+          'url': fetched.url,
+          'durationMs': stopwatch.elapsedMilliseconds,
+          'phase': 'parse',
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
   }
 
   static ExtractedArticle extractHtml(String html, String url) {
@@ -127,11 +169,54 @@ class ContentService {
   Future<ParsedFeed> fetchFeed(String url) async {
     final uri = _validatedHttpUri(url);
     final fetched = await _fetchBytes(uri, maxArticleBytes);
-    return parseFeed(
-      utf8.decode(fetched.bytes, allowMalformed: true),
-      uri.toString(),
-      documentUrl: fetched.url.toString(),
+    final stopwatch = Stopwatch()..start();
+    DiagnosticScope.log(
+      DiagnosticLevel.debug,
+      'content',
+      'parse.start',
+      data: {
+        'kind': 'rss',
+        'url': uri,
+        'documentUrl': fetched.url,
+        'bytes': fetched.bytes.length,
+      },
     );
+    try {
+      final parsed = parseFeed(
+        utf8.decode(fetched.bytes, allowMalformed: true),
+        uri.toString(),
+        documentUrl: fetched.url.toString(),
+      );
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'content',
+        'parse.success',
+        data: {
+          'kind': 'rss',
+          'url': uri,
+          'documentUrl': fetched.url,
+          'durationMs': stopwatch.elapsedMilliseconds,
+          'entries': parsed.entries.length,
+        },
+      );
+      return parsed;
+    } catch (error, stackTrace) {
+      DiagnosticScope.log(
+        DiagnosticLevel.error,
+        'content',
+        'parse.failure',
+        data: {
+          'kind': 'rss',
+          'url': uri,
+          'documentUrl': fetched.url,
+          'durationMs': stopwatch.elapsedMilliseconds,
+          'phase': 'parse',
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
   }
 
   static ParsedFeed parseFeed(
@@ -167,39 +252,209 @@ class ContentService {
     int maxBytes,
   ) async {
     var currentUri = uri;
+    final requestId =
+        'content-${DateTime.now().microsecondsSinceEpoch}-${_requestSequence++}';
     late http.StreamedResponse response;
     // Track every hop: the HTTP client's final URL may be a relative Location.
     for (var redirects = 0; ; redirects++) {
       final request = http.Request('GET', currentUri)..followRedirects = false;
-      response = await _client.send(request).timeout(timeout);
+      final stopwatch = Stopwatch()..start();
+      DiagnosticScope.log(
+        DiagnosticLevel.debug,
+        'content',
+        'request.start',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'host': currentUri.host,
+          'port': currentUri.hasPort ? currentUri.port : null,
+          'phase': 'request',
+          'redirect': redirects,
+        },
+      );
+      try {
+        response = await _client.send(request).timeout(timeout);
+      } catch (error, stackTrace) {
+        DiagnosticScope.log(
+          DiagnosticLevel.error,
+          'content',
+          'request.failure',
+          data: {
+            'url': currentUri,
+            'requestId': requestId,
+            'host': currentUri.host,
+            'port': currentUri.hasPort ? currentUri.port : null,
+            'phase': _requestFailurePhase(error),
+            'durationMs': stopwatch.elapsedMilliseconds,
+            'statusCode': null,
+            ..._networkErrorData(error),
+          },
+          error: error,
+          stackTrace: stackTrace,
+        );
+        rethrow;
+      }
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'content',
+        'response.headers',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'host': currentUri.host,
+          'port': currentUri.hasPort ? currentUri.port : null,
+          'phase': 'headers',
+          'durationMs': stopwatch.elapsedMilliseconds,
+          'statusCode': response.statusCode,
+          'contentLength': response.contentLength,
+          'headerCount': response.headers.length,
+        },
+      );
       if (![301, 302, 303, 307, 308].contains(response.statusCode)) break;
       await response.stream.listen(null).cancel();
       final location = response.headers['location'];
       if (redirects >= 5 || location == null || location.trim().isEmpty) {
+        DiagnosticScope.log(
+          DiagnosticLevel.error,
+          'content',
+          'redirect.failure',
+          data: {
+            'url': currentUri,
+            'requestId': requestId,
+            'phase': 'redirect',
+            'statusCode': response.statusCode,
+            'redirect': redirects,
+          },
+        );
         throw http.ClientException('网页跳转过多或缺少目标地址', currentUri);
       }
-      currentUri = _validatedHttpUri(
+      final nextUri = _validatedHttpUri(
         currentUri.resolve(location.trim()).toString(),
       );
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'content',
+        'redirect.follow',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'location': nextUri,
+          'phase': 'redirect',
+          'statusCode': response.statusCode,
+          'redirect': redirects,
+        },
+      );
+      currentUri = nextUri;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      DiagnosticScope.log(
+        DiagnosticLevel.error,
+        'content',
+        'request.failure',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'phase': 'status',
+          'statusCode': response.statusCode,
+        },
+      );
       throw http.ClientException('请求失败：HTTP ${response.statusCode}', uri);
     }
     final contentLength = response.contentLength;
     if (contentLength != null && contentLength > maxBytes) {
+      DiagnosticScope.log(
+        DiagnosticLevel.error,
+        'content',
+        'body.failure',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'phase': 'body',
+          'statusCode': response.statusCode,
+          'bytes': contentLength,
+          'limitBytes': maxBytes,
+        },
+      );
       throw FormatException('响应过大：超过 ${maxBytes ~/ (1024 * 1024)}MB 上限');
     }
 
     final builder = BytesBuilder(copy: false);
     var total = 0;
-    await for (final chunk in response.stream.timeout(timeout)) {
-      total += chunk.length;
-      if (total > maxBytes) {
-        throw FormatException('响应过大：超过 ${maxBytes ~/ (1024 * 1024)}MB 上限');
+    final bodyStopwatch = Stopwatch()..start();
+    try {
+      await for (final chunk in response.stream.timeout(timeout)) {
+        total += chunk.length;
+        if (total > maxBytes) {
+          DiagnosticScope.log(
+            DiagnosticLevel.error,
+            'content',
+            'body.failure',
+            data: {
+              'url': currentUri,
+              'requestId': requestId,
+              'phase': 'body',
+              'statusCode': response.statusCode,
+              'bytes': total,
+              'limitBytes': maxBytes,
+            },
+          );
+          throw FormatException('响应过大：超过 ${maxBytes ~/ (1024 * 1024)}MB 上限');
+        }
+        builder.add(chunk);
       }
-      builder.add(chunk);
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'content',
+        'body.success',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'phase': 'body',
+          'statusCode': response.statusCode,
+          'bytes': total,
+          'durationMs': bodyStopwatch.elapsedMilliseconds,
+        },
+      );
+    } catch (error, stackTrace) {
+      DiagnosticScope.log(
+        DiagnosticLevel.error,
+        'content',
+        'body.failure',
+        data: {
+          'url': currentUri,
+          'requestId': requestId,
+          'phase': 'body',
+          'statusCode': response.statusCode,
+          'bytes': total,
+          'durationMs': bodyStopwatch.elapsedMilliseconds,
+          ..._networkErrorData(error),
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
     return (bytes: builder.takeBytes(), url: currentUri);
+  }
+
+  static String _requestFailurePhase(Object error) {
+    if (error is HandshakeException ||
+        error.runtimeType.toString().contains('Handshake')) {
+      return 'tls';
+    }
+    if (error is SocketException) return 'connect';
+    if (error is TimeoutException) return 'timeout';
+    return 'request';
+  }
+
+  static Map<String, Object?> _networkErrorData(Object error) {
+    OSError? osError;
+    if (error is SocketException) osError = error.osError;
+    return {
+      'errorType': error.runtimeType.toString(),
+      if (osError != null) 'osErrorCode': osError.errorCode,
+      if (osError != null) 'osErrorMessage': osError.message,
+    };
   }
 
   static Uri _validatedHttpUri(String url) {

@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../core/diagnostics.dart';
 import 'common.dart';
+import 'diagnostic_events_page.dart';
+import '../core/diagnostic_controller.dart';
 
 void openDiagnostics(
   BuildContext context,
@@ -88,7 +90,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
           ),
           IconButton(
             tooltip: '清空日志',
-            onPressed: () => _clear(context, logs),
+            onPressed: () => _clear(context, widget.controller),
             icon: const Icon(Icons.delete_outline),
           ),
         ],
@@ -98,6 +100,19 @@ class _DeveloperPageState extends State<DeveloperPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  ListTile(
+                    leading: const Icon(Icons.bug_report_outlined),
+                    title: const Text('App 事件与诊断包'),
+                    subtitle: Text(
+                      '当前 ${logs.level.name.toUpperCase()} · 临时 DEBUG、筛选与内网上传',
+                    ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            DiagnosticEventsPage(controller: widget.controller),
+                      ),
+                    ),
+                  ),
                   SwitchListTile(
                     title: const Text('记录模型完整交互'),
                     subtitle: const Text('仅记录开启后的请求与响应；可能包含资料正文。密钥与图片内容会移除。'),
@@ -260,7 +275,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
       ],
     ),
   );
-  Future<void> _clear(BuildContext context, DiagnosticStore logs) async {
+  Future<void> _clear(BuildContext context, AppController controller) async {
     final yes = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -278,7 +293,9 @@ class _DeveloperPageState extends State<DeveloperPage> {
         ],
       ),
     );
-    if (yes == true) logs.clear();
+    if (yes == true && context.mounted) {
+      await runUiAction(context, controller.clearAppDiagnostics);
+    }
   }
 }
 

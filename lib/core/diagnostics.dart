@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -12,6 +13,66 @@ class DiagnosticCancelled implements Exception {
 }
 
 DateTime _date(dynamic value) => DateTime.parse(value as String);
+
+enum DiagnosticLevel {
+  debug,
+  info,
+  warn,
+  error;
+
+  static DiagnosticLevel parse(Object? value) {
+    final text = value?.toString().toLowerCase();
+    return DiagnosticLevel.values.firstWhere(
+      (level) => level.name == text,
+      orElse: () => DiagnosticLevel.info,
+    );
+  }
+}
+
+class DiagnosticEvent {
+  final String id, sessionId, module, name;
+  final DiagnosticLevel level;
+  final String? taskId, entityId;
+  final DateTime time;
+  final Map<String, Object?> data;
+
+  DiagnosticEvent({
+    required this.id,
+    required this.sessionId,
+    required this.level,
+    required this.module,
+    required this.name,
+    required this.time,
+    this.taskId,
+    this.entityId,
+    Map<String, Object?> data = const {},
+  }) : data = Map.unmodifiable(data);
+
+  DiagnosticEvent.fromJson(Map<String, dynamic> json)
+    : id = json['id'] as String,
+      sessionId = json['sessionId'] as String? ?? '',
+      level = DiagnosticLevel.parse(json['level']),
+      module = json['module'] as String? ?? 'unknown',
+      name = json['name'] as String? ?? 'event',
+      taskId = json['taskId'] as String?,
+      entityId = json['entityId'] as String?,
+      time = _date(json['time']),
+      data = Map.unmodifiable(
+        (json['data'] as Map? ?? const {}).cast<String, Object?>(),
+      );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'sessionId': sessionId,
+    'level': level.name,
+    'module': module,
+    'name': name,
+    'taskId': taskId,
+    'entityId': entityId,
+    'time': time.toIso8601String(),
+    'data': data,
+  };
+}
 
 class DiagnosticStep {
   final String id, label;
@@ -91,7 +152,7 @@ class DiagnosticCall {
 
 class DiagnosticTask {
   final String id, type, title;
-  final String? entityId, parentId;
+  final String? sessionId, entityId, parentId;
   final List<String> inputItemIds;
   final DateTime startedAt;
   DateTime? endedAt;
@@ -104,6 +165,7 @@ class DiagnosticTask {
     this.type,
     this.title,
     this.startedAt, {
+    this.sessionId,
     this.entityId,
     this.parentId,
     List<String> inputItemIds = const [],
@@ -114,6 +176,7 @@ class DiagnosticTask {
     : id = j['id'],
       type = j['type'],
       title = j['title'],
+      sessionId = j['sessionId'] as String?,
       entityId = j['entityId'],
       parentId = j['parentId'],
       inputItemIds = List<String>.from(j['inputItemIds'] ?? []),
@@ -129,6 +192,7 @@ class DiagnosticTask {
           .toList();
   Map<String, dynamic> toJson() => {
     'id': id,
+    'sessionId': sessionId,
     'type': type,
     'title': title,
     'entityId': entityId,
@@ -162,10 +226,36 @@ class _Context {
 class DiagnosticScope {
   static final _key = Object(), _stepKey = Object();
   static _Context? get _context => Zone.current[_key] as _Context?;
+  static bool get hasContext => _context != null;
   static Set<String> get excludedUrls => _context?.excludedUrls ?? const {};
   static void registerCredentials(Iterable<String> credentials) {
     _context?.store._credentials.addAll(
       credentials.where((key) => key.isNotEmpty),
+    );
+  }
+
+  static void log(
+    DiagnosticLevel level,
+    String module,
+    String name, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+    String? taskId,
+    String? entityId,
+  }) {
+    final context = _context;
+    if (context == null) return;
+    context.store.log(
+      level,
+      module,
+      name,
+      data: data,
+      error: error,
+      stackTrace: stackTrace,
+      taskId: taskId ?? context.task.id,
+      entityId: entityId ?? context.task.entityId,
+      contextGeneration: context.generation,
     );
   }
 
@@ -176,8 +266,14 @@ class DiagnosticScope {
   static void failCurrent(String message) =>
       _context?.store.failCurrent(message);
 
-  static String sanitizeError(Object error) =>
-      _context?.store.sanitize(error.toString()).toString() ?? error.toString();
+  static Object? sanitizeEvent(Object? value) =>
+      _context?.store.sanitizeEvent(value) ?? value;
+
+  static String sanitizeError(Object error) {
+    final store = _context?.store;
+    if (store == null) return error.toString();
+    return store.sanitize(store._errorText(error)).toString();
+  }
 
   static Future<T> step<T>(String label, Future<T> Function() body) {
     final context = _context;
@@ -236,7 +332,7 @@ class DiagnosticScope {
       call.usage = usage;
       call.error = error == null
           ? null
-          : store.sanitize(error.toString()).toString();
+          : store.sanitizeEvent(store._errorText(error)).toString();
       if (call.capture && store.debugEnabled && response != null) {
         final payload = store._payload(response);
         call.response = payload.$1;
@@ -259,20 +355,26 @@ class DiagnosticScope {
 /// Diagnostics are a separate, best-effort database and never block business work.
 class DiagnosticStore extends ChangeNotifier {
   final DateTime Function() clock;
-  final int maxBytes, payloadLimitBytes;
+  final int maxBytes, payloadLimitBytes, maxQueuedEvents;
   Database? _database;
+  late final String sessionId;
+  DiagnosticLevel _level = DiagnosticLevel.info;
   bool debugEnabled = false;
   String? lastError;
   bool _closed = false;
-  int _sequence = 0, _generation = 0;
+  int _sequence = 0, _generation = 0, _droppedEvents = 0;
   final Set<String> _credentials = {}, _purgedIds = {};
   final Map<String, _Context> _active = {};
+  final List<DiagnosticEvent> _pendingEvents = [];
+  Timer? _flushTimer;
   DiagnosticStore(
     String path, {
     DateTime Function()? clock,
     this.maxBytes = 50 * 1024 * 1024,
     this.payloadLimitBytes = 256 * 1024,
+    this.maxQueuedEvents = 256,
   }) : clock = clock ?? DateTime.now {
+    sessionId = _id();
     _safe(() {
       if (path != ':memory:') File(path).parent.createSync(recursive: true);
       _database = sqlite3.open(path);
@@ -280,6 +382,9 @@ class DiagnosticStore extends ChangeNotifier {
       _database!.execute('PRAGMA busy_timeout=1000');
       _database!.execute(
         'CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, started TEXT NOT NULL, data TEXT NOT NULL)',
+      );
+      _database!.execute(
+        'CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, session TEXT NOT NULL, time TEXT NOT NULL, level TEXT NOT NULL, data TEXT NOT NULL)',
       );
       for (final task in _read()) {
         if (task.status == 'running') {
@@ -301,6 +406,22 @@ class DiagnosticStore extends ChangeNotifier {
     });
   }
   String _id() => '${clock().microsecondsSinceEpoch}-${_sequence++}';
+  DiagnosticLevel get level => _level;
+  int get generation => _generation;
+  void setLevel(DiagnosticLevel value) {
+    final previous = _level;
+    _level = value;
+    if (value == DiagnosticLevel.debug && previous != DiagnosticLevel.debug) {
+      log(
+        DiagnosticLevel.debug,
+        'diagnostics.session',
+        'session.enabled',
+        data: {'level': value.name},
+      );
+    }
+    _notify();
+  }
+
   void _safe(void Function() body) {
     try {
       if (_closed) throw StateError('诊断日志已关闭');
@@ -322,11 +443,43 @@ class DiagnosticStore extends ChangeNotifier {
         ),
       )
       .toList();
+
+  List<DiagnosticEvent> _readEvents() => _database!
+      .select('SELECT data FROM events ORDER BY time DESC, rowid DESC')
+      .map(
+        (r) => DiagnosticEvent.fromJson(
+          jsonDecode(r['data'] as String) as Map<String, dynamic>,
+        ),
+      )
+      .toList();
+
   List<DiagnosticTask> get tasks {
     var result = <DiagnosticTask>[];
     _safe(() {
       _prune();
       result = _read();
+    });
+    return result;
+  }
+
+  List<DiagnosticEvent> get events {
+    var result = <DiagnosticEvent>[];
+    _safe(() {
+      _flushEvents();
+      _prune();
+      result = _readEvents();
+    });
+    return result;
+  }
+
+  String? get latestDebugSessionId {
+    String? result;
+    _safe(() {
+      _flushEvents();
+      final rows = _database!.select(
+        "SELECT session FROM events WHERE level='debug' ORDER BY time DESC, rowid DESC LIMIT 1",
+      );
+      result = rows.isEmpty ? null : rows.first['session'] as String;
     });
     return result;
   }
@@ -342,14 +495,147 @@ class DiagnosticStore extends ChangeNotifier {
     var bytes = 0;
     _safe(() {
       bytes =
-          _database!
+          (_database!
                   .select(
                     'SELECT COALESCE(SUM(length(CAST(data AS BLOB))),0) AS size FROM tasks',
                   )
                   .single['size']
-              as int;
+              as int) +
+          (_database!
+                  .select(
+                    'SELECT COALESCE(SUM(length(CAST(data AS BLOB))),0) AS size FROM events',
+                  )
+                  .single['size']
+              as int);
     });
     return bytes;
+  }
+
+  void registerCredentials(Iterable<String> credentials) {
+    _credentials.addAll(credentials.where((key) => key.isNotEmpty));
+  }
+
+  void log(
+    DiagnosticLevel level,
+    String module,
+    String name, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+    String? taskId,
+    String? entityId,
+    int? contextGeneration,
+  }) {
+    try {
+      if (_closed) throw StateError('诊断日志已关闭');
+      if (contextGeneration != null && contextGeneration != _generation) {
+        return;
+      }
+      if (level.index < _level.index) return;
+      final cleanData = Map<String, Object?>.from(sanitizeEvent(data) as Map);
+      if (error != null) {
+        cleanData['errorType'] = error.runtimeType.toString();
+        cleanData['error'] = sanitizeEvent(_errorText(error));
+      }
+      if (stackTrace != null && level == DiagnosticLevel.error) {
+        cleanData['stackTrace'] = sanitizeEvent(_stackSummary(stackTrace));
+      }
+      if (_droppedEvents > 0) {
+        cleanData['droppedBefore'] = _droppedEvents;
+        _droppedEvents = 0;
+      }
+      final event = DiagnosticEvent(
+        id: _id(),
+        sessionId: sessionId,
+        level: level,
+        module: module,
+        name: name,
+        taskId: taskId,
+        entityId: entityId,
+        time: clock(),
+        data: cleanData,
+      );
+      _enqueueEvent(event);
+      if (level == DiagnosticLevel.error || _pendingEvents.length >= 16) {
+        flush();
+      } else {
+        _scheduleFlush();
+      }
+      _notify();
+    } catch (_) {
+      lastError = '诊断日志无法读写；业务操作仍可继续';
+    }
+  }
+
+  void _enqueueEvent(DiagnosticEvent event) {
+    if (_pendingEvents.length < maxQueuedEvents) {
+      _pendingEvents.add(event);
+      return;
+    }
+    if (event.level == DiagnosticLevel.error) {
+      final index = _pendingEvents.indexWhere(
+        (item) => item.level != DiagnosticLevel.error,
+      );
+      if (index >= 0) {
+        _pendingEvents.removeAt(index);
+        _pendingEvents.add(event);
+        _droppedEvents++;
+        return;
+      }
+    }
+    _droppedEvents++;
+  }
+
+  void flush() {
+    _safe(_flushEvents);
+  }
+
+  void _scheduleFlush() {
+    if (_flushTimer != null || _closed) return;
+    _flushTimer = Timer(const Duration(milliseconds: 250), () {
+      _flushTimer = null;
+      flush();
+    });
+  }
+
+  void _flushEvents() {
+    if (_pendingEvents.isEmpty) return;
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    final batch = List<DiagnosticEvent>.from(_pendingEvents);
+    _pendingEvents.clear();
+    try {
+      _database!.execute('BEGIN IMMEDIATE');
+      for (final event in batch) {
+        _writeEvent(event);
+      }
+      _database!.execute('COMMIT');
+      _prune();
+    } catch (_) {
+      try {
+        _database!.execute('ROLLBACK');
+      } catch (_) {
+        /* Database may already be closed or outside a transaction. */
+      }
+      for (final event in batch) {
+        _enqueueEvent(event);
+      }
+      rethrow;
+    }
+  }
+
+  void _writeEvent(DiagnosticEvent event) {
+    final payload = jsonEncode(event.toJson());
+    _database!.execute(
+      'INSERT INTO events(id,session,time,level,data) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
+      [
+        event.id,
+        event.sessionId,
+        event.time.toIso8601String(),
+        event.level.name,
+        payload,
+      ],
+    );
   }
 
   Future<T> runTask<T>({
@@ -367,6 +653,7 @@ class DiagnosticStore extends ChangeNotifier {
       type,
       title,
       clock(),
+      sessionId: sessionId,
       entityId: entityId,
       parentId: parent?.task.id,
       inputItemIds: inputItemIds,
@@ -380,6 +667,19 @@ class DiagnosticStore extends ChangeNotifier {
     );
     _active[task.id] = context;
     _saveContext(context);
+    log(
+      DiagnosticLevel.info,
+      'diagnostics.task',
+      'task.start',
+      taskId: task.id,
+      entityId: task.entityId,
+      data: {
+        'type': type,
+        'parentId': task.parentId,
+        'inputCount': inputItemIds.length,
+      },
+      contextGeneration: context.generation,
+    );
     return runZoned(
       () async {
         try {
@@ -390,10 +690,37 @@ class DiagnosticStore extends ChangeNotifier {
           return value;
         } catch (error) {
           task.status = error is DiagnosticCancelled ? 'cancelled' : 'failed';
-          task.error = sanitize(error.toString()).toString();
+          task.error = sanitizeEvent(_errorText(error)).toString();
+          log(
+            DiagnosticLevel.error,
+            'diagnostics.task',
+            'task.error',
+            taskId: task.id,
+            entityId: task.entityId,
+            error: error,
+            data: {'type': type, 'status': task.status},
+            contextGeneration: context.generation,
+          );
           rethrow;
         } finally {
           task.endedAt = clock();
+          log(
+            task.status == 'failed'
+                ? DiagnosticLevel.error
+                : DiagnosticLevel.info,
+            'diagnostics.task',
+            'task.end',
+            taskId: task.id,
+            entityId: task.entityId,
+            data: {
+              'type': type,
+              'status': task.status,
+              'durationMs': task.endedAt!
+                  .difference(task.startedAt)
+                  .inMilliseconds,
+            },
+            contextGeneration: context.generation,
+          );
           _saveContext(context);
           _active.remove(task.id);
         }
@@ -411,6 +738,15 @@ class DiagnosticStore extends ChangeNotifier {
     final step = DiagnosticStep(_id(), label, clock());
     context.task.steps.add(step);
     _saveContext(context);
+    log(
+      DiagnosticLevel.debug,
+      'diagnostics.task',
+      'step.start',
+      taskId: context.task.id,
+      entityId: context.task.entityId,
+      data: {'stepId': step.id, 'label': label},
+      contextGeneration: context.generation,
+    );
     return runZoned(() async {
       try {
         DiagnosticScope.ensureAllowed();
@@ -420,11 +756,39 @@ class DiagnosticStore extends ChangeNotifier {
         return result;
       } catch (error) {
         step.status = error is DiagnosticCancelled ? 'cancelled' : 'failed';
-        step.error = sanitize(error.toString()).toString();
+        step.error = sanitizeEvent(_errorText(error)).toString();
+        log(
+          DiagnosticLevel.error,
+          'diagnostics.task',
+          'step.error',
+          taskId: context.task.id,
+          entityId: context.task.entityId,
+          error: error,
+          data: {'stepId': step.id, 'label': label, 'status': step.status},
+          contextGeneration: context.generation,
+        );
         failCurrent(step.error!);
         rethrow;
       } finally {
         step.endedAt = clock();
+        log(
+          step.status == 'failed'
+              ? DiagnosticLevel.error
+              : DiagnosticLevel.debug,
+          'diagnostics.task',
+          'step.end',
+          taskId: context.task.id,
+          entityId: context.task.entityId,
+          data: {
+            'stepId': step.id,
+            'label': label,
+            'status': step.status,
+            'durationMs': step.endedAt!
+                .difference(step.startedAt)
+                .inMilliseconds,
+          },
+          contextGeneration: context.generation,
+        );
         _saveContext(context);
       }
     }, zoneValues: {DiagnosticScope._stepKey: step.id});
@@ -434,7 +798,7 @@ class DiagnosticStore extends ChangeNotifier {
     final context = DiagnosticScope._context;
     if (context?.store != this) return;
     context!.task.status = 'failed';
-    context.task.error = sanitize(message).toString();
+    context.task.error = sanitizeEvent(message).toString();
     _saveContext(context);
   }
 
@@ -483,6 +847,13 @@ class DiagnosticStore extends ChangeNotifier {
   void _prune() {
     final now = clock();
     var changed = false;
+    _database!.execute(
+      "DELETE FROM events WHERE (level='debug' AND time <= ?) OR (level<>'debug' AND time <= ?)",
+      [
+        now.subtract(const Duration(days: 7)).toIso8601String(),
+        now.subtract(const Duration(days: 30)).toIso8601String(),
+      ],
+    );
     for (final task in _read()) {
       if (now.difference(task.startedAt) >= const Duration(days: 30)) {
         _database!.execute('DELETE FROM tasks WHERE id=?', [task.id]);
@@ -504,9 +875,29 @@ class DiagnosticStore extends ChangeNotifier {
       }
     }
     while (logicalBytes > (maxBytes < 0 ? 0 : maxBytes)) {
-      _database!.execute(
-        'DELETE FROM tasks WHERE id IN (SELECT id FROM tasks ORDER BY started ASC, rowid ASC LIMIT 1)',
+      final oldestTasks = _database!.select(
+        'SELECT id, started AS time FROM tasks ORDER BY started ASC, rowid ASC LIMIT 1',
       );
+      final oldestEvents = _database!.select(
+        'SELECT id, time FROM events ORDER BY time ASC, rowid ASC LIMIT 1',
+      );
+      if (oldestTasks.isEmpty && oldestEvents.isEmpty) break;
+      final removeTask =
+          oldestEvents.isEmpty ||
+          (oldestTasks.isNotEmpty &&
+              (oldestTasks.first['time'] as String).compareTo(
+                    oldestEvents.first['time'] as String,
+                  ) <=
+                  0);
+      if (removeTask) {
+        _database!.execute('DELETE FROM tasks WHERE id=?', [
+          oldestTasks.first['id'],
+        ]);
+      } else {
+        _database!.execute('DELETE FROM events WHERE id=?', [
+          oldestEvents.first['id'],
+        ]);
+      }
       changed = true;
     }
     // DELETE securely overwrites cells; VACUUM returns released pages to disk.
@@ -520,8 +911,13 @@ class DiagnosticStore extends ChangeNotifier {
 
   void clear() {
     _generation++;
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _pendingEvents.clear();
+    _droppedEvents = 0;
     _safe(() {
       _database!.execute('DELETE FROM tasks');
+      _database!.execute('DELETE FROM events');
       _database!.execute('VACUUM');
     });
     _notify();
@@ -559,6 +955,10 @@ class DiagnosticStore extends ChangeNotifier {
               .where((t) => taskId == null || t.id == taskId)
               .map((t) => t.toJson())
               .toList(),
+          'events': events
+              .where((event) => taskId == null || event.taskId == taskId)
+              .map((event) => event.toJson())
+              .toList(),
         }),
       ),
     );
@@ -568,6 +968,97 @@ class DiagnosticStore extends ChangeNotifier {
     r'^(?:.*(?:apiKey|apiToken|accessToken|refreshToken|idToken|authToken|password|passwd|secret|secretKey|credential|credentials|privateKey)|authorization|proxyAuthorization|cookie|setCookie|token|key|searchKey|modelKey)$',
     caseSensitive: false,
   );
+
+  static final _eventSensitive = RegExp(
+    r'^(?:.*(?:apiKey|apiToken|accessToken|refreshToken|idToken|authToken|password|passwd|secret|secretKey|credential|credentials|privateKey|authorization|cookie|body|payload|content|html|xml|markdown|article|image|binary)|authorization|proxyAuthorization|cookie|setCookie|token|key|searchKey|modelKey|request|response)$',
+    caseSensitive: false,
+  );
+
+  static final _urlInText = RegExp(
+    r'''https?://[^\s"'<>]+''',
+    caseSensitive: false,
+  );
+
+  static String safeUrl(Uri uri) {
+    final buffer = StringBuffer()
+      ..write(uri.scheme.isEmpty ? 'https' : uri.scheme)
+      ..write('://')
+      ..write(uri.host);
+    if (uri.port != 0) buffer.write(':${uri.port}');
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    if (path == '/') {
+      buffer.write('/');
+    } else {
+      final digest = sha256.convert(utf8.encode(path)).toString();
+      buffer.write('/[path:${digest.substring(0, 16)}]');
+    }
+    return buffer.toString();
+  }
+
+  String _stackSummary(StackTrace stackTrace) => stackTrace
+      .toString()
+      .split('\n')
+      .where((line) => line.trim().isNotEmpty)
+      .take(12)
+      .join('\n');
+
+  String _errorText(Object error) {
+    if (error is FormatException) {
+      return error.message;
+    }
+    return error.toString().split('\n').first;
+  }
+
+  Object? sanitizeEvent(Object? value) => _sanitizeEvent(value, 0);
+
+  Object? _sanitizeEvent(Object? value, int depth) {
+    if (depth > 32) return '[深层嵌套内容已省略]';
+    if (value is Uri) return safeUrl(value);
+    if (value == null || value is num || value is bool) return value;
+    if (value is DateTime) return value.toIso8601String();
+    if (value is StackTrace) return _stackSummary(value);
+    if (value is Map) {
+      return value.map((key, v) {
+        final cleanKey = sanitize(key.toString()).toString();
+        final normalized = key.toString().replaceAll(RegExp(r'[-_\s]'), '');
+        return MapEntry(
+          cleanKey,
+          _eventSensitive.hasMatch(normalized)
+              ? '[REDACTED]'
+              : _sanitizeEvent(v, depth + 1),
+        );
+      });
+    }
+    if (value is Iterable) {
+      return value.map((v) => _sanitizeEvent(v, depth + 1)).toList();
+    }
+    var text = value is String ? value : value.toString();
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map || decoded is List) {
+        return jsonEncode(_sanitizeEvent(decoded, depth + 1));
+      }
+    } catch (_) {
+      /* Ordinary text. */
+    }
+    text = sanitize(text).toString();
+    text = text.replaceAllMapped(_urlInText, (match) {
+      final raw = match[0]!;
+      final uri = Uri.tryParse(raw);
+      return uri == null || !uri.hasScheme || uri.host.isEmpty
+          ? '[url]'
+          : safeUrl(uri);
+    });
+    text = text.replaceAll(
+      RegExp(r'<[^>\r\n]{16,}>', caseSensitive: false),
+      '[markup omitted]',
+    );
+    if (text.length > 2048) {
+      text = '${text.substring(0, 2048)}\n[已截断]';
+    }
+    return text;
+  }
+
   Object? sanitize(Object? value) => _sanitize(value, 0);
 
   Object? _sanitize(Object? value, int depth) {
@@ -672,6 +1163,9 @@ class DiagnosticStore extends ChangeNotifier {
 
   void close() {
     if (_closed) return;
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    _safe(_flushEvents);
     _database?.close();
     _database = null;
     _closed = true;

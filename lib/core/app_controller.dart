@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide DiagnosticLevel;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -31,6 +31,14 @@ class DeviceSecrets implements SecretStore {
   @override
   Future<void> write(String key, String value) =>
       storage.write(key: key, value: value);
+}
+
+class RssRefreshResult {
+  const RssRefreshResult({required this.succeeded, required this.failed});
+
+  final int succeeded, failed;
+  int get total => succeeded + failed;
+  bool get hasFailures => failed > 0;
 }
 
 class AppController extends ChangeNotifier {
@@ -100,19 +108,37 @@ class AppController extends ChangeNotifier {
       }
       await controller.initialize(digestOnly: digestOnly);
       return controller;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      controller.diagnostics.log(
+        DiagnosticLevel.error,
+        'app',
+        'startup.failure',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      controller.diagnostics.flush();
       controller.dispose();
       rethrow;
     }
   }
 
   Future<void> initialize({bool digestOnly = false}) async {
+    diagnostics.log(
+      DiagnosticLevel.info,
+      'app',
+      'startup.begin',
+      data: {'digestOnly': digestOnly, 'sessionId': diagnostics.sessionId},
+    );
     _digestOnly = digestOnly;
     data = store.load();
     runtime = store.loadRuntime();
-    if (digestOnly) return;
+    if (digestOnly) {
+      diagnostics.log(DiagnosticLevel.info, 'app', 'startup.digestOnly');
+      return;
+    }
     diagnostics.debugEnabled = data.settings.debugModelLogging;
     diagnostics.prune();
+    await _logDiagnosticEnvironment('app', 'environment');
     await cleanupExpiredTrash();
     _recomputeInterests();
     native.setShareListener(() {
@@ -121,6 +147,20 @@ class AppController extends ChangeNotifier {
     _apiKey = await secrets.read('modelKey') ?? '';
     _searchKey = await secrets.read('searchKey') ?? '';
     _recoverInterruptedTasks();
+    diagnostics.log(
+      DiagnosticLevel.info,
+      'app',
+      'startup.complete',
+      data: {
+        'items': data.items.length,
+        'feeds': data.feeds.length,
+        'pendingJobs': runtime.jobs
+            .where(
+              (job) => ['queued', 'running', 'paused'].contains(job.status),
+            )
+            .length,
+      },
+    );
     _save();
   }
 
@@ -142,6 +182,77 @@ class AppController extends ChangeNotifier {
         topic.status = 'pending';
       }
     }
+  }
+
+  Future<void> _logDiagnosticEnvironment(
+    String module,
+    String name, {
+    String? entityId,
+  }) async {
+    try {
+      _logDiagnosticEvent(
+        DiagnosticLevel.info,
+        module,
+        name,
+        data: await native.diagnosticEnvironment(),
+        entityId: entityId,
+      );
+    } catch (error) {
+      _logDiagnosticEvent(
+        DiagnosticLevel.warn,
+        module,
+        '$name.unavailable',
+        error: error,
+        entityId: entityId,
+      );
+    }
+  }
+
+  void _logDiagnosticEvent(
+    DiagnosticLevel level,
+    String module,
+    String name, {
+    Map<String, Object?> data = const {},
+    Object? error,
+    StackTrace? stackTrace,
+    String? entityId,
+  }) {
+    if (DiagnosticScope.hasContext) {
+      DiagnosticScope.log(
+        level,
+        module,
+        name,
+        data: data,
+        error: error,
+        stackTrace: stackTrace,
+        entityId: entityId,
+      );
+    } else {
+      diagnostics.log(
+        level,
+        module,
+        name,
+        data: data,
+        error: error,
+        stackTrace: stackTrace,
+        entityId: entityId,
+      );
+    }
+  }
+
+  void logRuntimeEvent(NativeRuntimeEvent event, {String source = 'native'}) {
+    diagnostics.log(
+      DiagnosticLevel.info,
+      source,
+      'runtime.event',
+      data: {
+        'kind': event.kind,
+        'entityType': event.entityType,
+        'entityId': event.entityId,
+        'message': event.message,
+      },
+      entityId: event.entityId,
+    );
   }
 
   void _save() {
@@ -1215,62 +1326,170 @@ class AppController extends ChangeNotifier {
     _save();
   }
 
-  Future<void> addFeed(String url) => _work(() async {
-    if (data.feeds.any((f) => f.url == url.trim())) return;
-    final parsed = await content.fetchFeed(url.trim());
-    final feed = Feed(
-      id: newId(),
-      url: url.trim(),
-      title: parsed.title,
-      refreshedAt: DateTime.now(),
-    );
-    data.feeds.add(feed);
-    for (final entry in parsed.entries) {
-      entry.feedId = feed.id;
-      data.entries.add(entry);
-    }
-    _save();
-  });
-  Future<void> refreshFeeds() => _work(() async {
-    for (final feed in data.feeds.where((feed) => !feed.paused)) {
-      try {
-        final parsed = await content.fetchFeed(feed.url);
-        feed.title = parsed.title;
-        feed.error = '';
-        feed.refreshedAt = DateTime.now();
-        for (final entry in parsed.entries) {
-          if (!data.entries.any((e) => e.id == entry.id)) {
-            entry.feedId = feed.id;
-            data.entries.insert(0, entry);
-          }
-        }
-      } catch (error) {
-        feed.error = error.toString();
+  Future<void> addFeed(String url) => _work(
+    () async {
+      await _logDiagnosticEnvironment('rss', 'environment.feed.add');
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'rss',
+        'feed.add.start',
+        data: {'url': Uri.tryParse(url.trim())},
+      );
+      if (data.feeds.any((f) => f.url == url.trim())) return;
+      final parsed = await content.fetchFeed(url.trim());
+      final feed = Feed(
+        id: newId(),
+        url: url.trim(),
+        title: parsed.title,
+        refreshedAt: DateTime.now(),
+      );
+      data.feeds.add(feed);
+      for (final entry in parsed.entries) {
+        entry.feedId = feed.id;
+        data.entries.add(entry);
       }
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'rss',
+        'feed.add.success',
+        data: {
+          'feedId': feed.id,
+          'entryCount': parsed.entries.length,
+          'url': Uri.tryParse(feed.url),
+        },
+      );
       _save();
-    }
-  });
-  Future<void> selectEntry(String id) async {
-    final entry = data.entries.firstWhere((e) => e.id == id);
-    if (entry.savedItemId != null) {
-      final existing = data.items
-          .where((i) => i.id == entry.savedItemId)
-          .firstOrNull;
-      if (existing != null) {
-        _notice('该链接已收藏，打开已有资料');
-        if (!existing.isActive) {
-          _notice(existing.isTrashed ? '该资料在回收站，可恢复后使用' : '该资料已归档');
+    },
+    type: 'rss',
+    title: '添加 RSS 订阅',
+  );
+  Future<RssRefreshResult> refreshFeeds() => _work(
+    () async {
+      await _logDiagnosticEnvironment('rss', 'environment.refresh');
+      var succeeded = 0, failed = 0;
+      for (final feed in data.feeds.where((feed) => !feed.paused)) {
+        DiagnosticScope.log(
+          DiagnosticLevel.info,
+          'rss',
+          'feed.refresh.start',
+          data: {'feedId': feed.id, 'url': Uri.tryParse(feed.url)},
+          entityId: feed.id,
+        );
+        try {
+          await diagnostics.runTask(
+            type: 'rssFeed',
+            title: '刷新 RSS 订阅',
+            entityId: feed.id,
+            body: () async {
+              final parsed = await content.fetchFeed(feed.url);
+              feed.title = parsed.title;
+              feed.error = '';
+              feed.refreshedAt = DateTime.now();
+              var inserted = 0;
+              for (final entry in parsed.entries) {
+                if (!data.entries.any((e) => e.id == entry.id)) {
+                  entry.feedId = feed.id;
+                  data.entries.insert(0, entry);
+                  inserted++;
+                }
+              }
+              DiagnosticScope.log(
+                DiagnosticLevel.info,
+                'rss',
+                'feed.refresh.success',
+                data: {
+                  'feedId': feed.id,
+                  'url': Uri.tryParse(feed.url),
+                  'entryCount': parsed.entries.length,
+                  'inserted': inserted,
+                },
+                entityId: feed.id,
+              );
+            },
+          );
+          succeeded++;
+        } catch (error) {
+          failed++;
+          feed.error = error.toString();
+          DiagnosticScope.log(
+            DiagnosticLevel.error,
+            'rss',
+            'feed.refresh.failure',
+            data: {'feedId': feed.id, 'url': Uri.tryParse(feed.url)},
+            error: error,
+            entityId: feed.id,
+          );
         }
         _save();
-        return;
       }
-      entry.savedItemId = null;
-    }
-    final item = await captureUrl(entry.url);
-    entry.savedItemId = item.id;
-    entry.processed = true;
-    _save();
-  }
+      if (failed > 0) {
+        diagnostics.failCurrent('RSS 刷新部分失败：成功 $succeeded，失败 $failed');
+      }
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'rss',
+        'refresh.summary',
+        data: {'succeeded': succeeded, 'failed': failed},
+      );
+      return RssRefreshResult(succeeded: succeeded, failed: failed);
+    },
+    type: 'rss',
+    title: '刷新 RSS 订阅',
+  );
+  Future<void> selectEntry(String id) => _work(
+    () async {
+      final entry = data.entries.firstWhere((e) => e.id == id);
+      await _logDiagnosticEnvironment(
+        'rss',
+        'environment.entry.select',
+        entityId: entry.id,
+      );
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'rss',
+        'entry.select.start',
+        data: {
+          'entryId': entry.id,
+          'feedId': entry.feedId,
+          'url': Uri.tryParse(entry.url),
+        },
+        entityId: entry.id,
+      );
+      if (entry.savedItemId != null) {
+        final existing = data.items
+            .where((i) => i.id == entry.savedItemId)
+            .firstOrNull;
+        if (existing != null) {
+          _notice('该链接已收藏，打开已有资料');
+          if (!existing.isActive) {
+            _notice(existing.isTrashed ? '该资料在回收站，可恢复后使用' : '该资料已归档');
+          }
+          _save();
+          return;
+        }
+        entry.savedItemId = null;
+      }
+      final item = await captureUrl(entry.url);
+      entry.savedItemId = item.id;
+      entry.processed = true;
+      DiagnosticScope.log(
+        DiagnosticLevel.info,
+        'rss',
+        'entry.select.success',
+        data: {
+          'entryId': entry.id,
+          'feedId': entry.feedId,
+          'itemId': item.id,
+          'url': Uri.tryParse(entry.url),
+        },
+        entityId: item.id,
+      );
+      _save();
+    },
+    type: 'rss',
+    title: '选择 RSS 条目',
+    entityId: id,
+  );
 
   Future<Topic> addTopic(String title, String question) async {
     if (title.trim().isEmpty || question.trim().isEmpty) {
@@ -1883,14 +2102,48 @@ class AppController extends ChangeNotifier {
 
   Future<Uint8List> backup() async {
     if (busy || _tracking) throw StateError('请等待当前任务结束再备份');
+    diagnostics.log(DiagnosticLevel.info, 'storage', 'backup.start');
     await cleanupExpiredTrash();
-    return store.backup();
+    try {
+      final bytes = store.backup();
+      diagnostics.log(
+        DiagnosticLevel.info,
+        'storage',
+        'backup.success',
+        data: {'bytes': bytes.length},
+      );
+      return bytes;
+    } catch (error) {
+      diagnostics.log(
+        DiagnosticLevel.error,
+        'storage',
+        'backup.failure',
+        error: error,
+      );
+      rethrow;
+    }
   }
 
   Future<void> restore(Uint8List bytes) async {
+    diagnostics.log(
+      DiagnosticLevel.warn,
+      'storage',
+      'restore.start',
+      data: {'bytes': bytes.length},
+    );
     await pauseTasks(cancelled: true);
     _invalidateTasks();
-    store.restore(bytes, serviceSettings: data.settings);
+    try {
+      store.restore(bytes, serviceSettings: data.settings);
+    } catch (error) {
+      diagnostics.log(
+        DiagnosticLevel.error,
+        'storage',
+        'restore.failure',
+        error: error,
+      );
+      rethrow;
+    }
     data = store.load();
     runtime = store.loadRuntime();
     diagnostics.debugEnabled = false;
@@ -1901,6 +2154,7 @@ class AppController extends ChangeNotifier {
     _save();
     await refreshToday();
     await updateNotificationSettings();
+    diagnostics.log(DiagnosticLevel.info, 'storage', 'restore.success');
   }
 
   @override

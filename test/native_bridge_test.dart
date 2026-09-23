@@ -135,6 +135,16 @@ void main() {
               ],
             };
           }
+          if (call.method == 'diagnosticEnvironment') {
+            return <String, Object?>{
+              'platform': 'android',
+              'appVersion': '1.2.3',
+              'buildNumber': '7',
+              'osVersion': '16',
+              'networkType': 'mobile',
+              'vpnActive': false,
+            };
+          }
           if (call.method == 'notificationStatus') {
             return true;
           }
@@ -145,6 +155,7 @@ void main() {
         });
 
     final context = await bridge.runtimeContext();
+    final environment = await bridge.diagnosticEnvironment();
     await bridge.startBackgroundWork();
     await bridge.updateBackgroundProgress(
       jobId: 'job-1',
@@ -176,10 +187,13 @@ void main() {
     ]);
     expect(context.recentEvents.last.entityType, 'today');
     expect(context.recentEvents.last.entityId, '');
+    expect(environment['networkType'], 'mobile');
+    expect(environment['vpnActive'], isFalse);
     expect(notificationsAllowed, isTrue);
     expect(notificationPublished, isTrue);
     expect(calls.map((call) => call.method), <String>[
       'runtimeContext',
+      'diagnosticEnvironment',
       'startBackgroundWork',
       'updateBackgroundProgress',
       'stopBackgroundWork',
@@ -188,19 +202,19 @@ void main() {
       'publishNotification',
       'finishDigest',
     ]);
-    expect(calls[2].arguments, <String, Object?>{
+    expect(calls[3].arguments, <String, Object?>{
       'jobId': 'job-1',
       'title': '分析资料',
       'stage': 'PDF 2/4',
       'completed': 2,
       'total': 4,
     });
-    expect(calls[4].arguments, <String, Object?>{
+    expect(calls[5].arguments, <String, Object?>{
       'enabled': true,
       'hour': 20,
       'minute': 15,
     });
-    expect(calls[6].arguments, <String, Object?>{
+    expect(calls[7].arguments, <String, Object?>{
       'id': 'digest-2026-09-22',
       'channel': 'digest',
       'title': '今日推荐',

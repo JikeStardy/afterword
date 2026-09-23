@@ -41,8 +41,7 @@ class _RssPageState extends State<RssPage> {
         IconButton(
           tooltip: '刷新订阅',
           icon: const Icon(Icons.refresh),
-          onPressed: () =>
-              runUiAction(context, controller.refreshFeeds, success: '订阅已刷新'),
+          onPressed: () => _refreshFeeds(context),
         ),
         IconButton(
           tooltip: '添加订阅',
@@ -199,6 +198,24 @@ class _RssPageState extends State<RssPage> {
       () => widget.controller.addFeed(url.trim()),
       success: '订阅已添加',
     );
+  }
+
+  Future<void> _refreshFeeds(BuildContext context) async {
+    try {
+      final result = await widget.controller.refreshFeeds();
+      if (!context.mounted) return;
+      final message = result.hasFailures
+          ? 'RSS 刷新完成：成功 ${result.succeeded}，失败 ${result.failed}'
+          : 'RSS 刷新完成：成功 ${result.succeeded}';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$error')));
+    }
   }
 
   Future<void> _processSelected(BuildContext context, bool skipped) async {
