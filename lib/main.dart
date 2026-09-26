@@ -99,11 +99,15 @@ class _ReadlaterAppState extends State<ReadlaterApp>
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Readlater',
-      debugShowCheckedModeBanner: false,
-      theme: readlaterTheme(),
-      home: ReadlaterShell(controller: widget.controller),
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) => MaterialApp(
+        title: 'Readlater',
+        debugShowCheckedModeBanner: false,
+        theme: readlaterTheme(widget.controller.data.settings.readingPreset),
+        themeAnimationDuration: Duration.zero,
+        home: ReadlaterShell(controller: widget.controller),
+      ),
     );
   }
 }

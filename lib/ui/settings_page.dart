@@ -19,6 +19,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  bool _savingAppearance = false;
   late final TextEditingController _endpoint;
   late final TextEditingController _textModel;
   late final TextEditingController _visionModel;
@@ -79,130 +80,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
       child: ListView(
         children: [
-          _backupSection(context),
-          SectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('模型', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _endpoint,
-                  decoration: const InputDecoration(
-                    labelText: '服务地址',
-                    helperText: '公网鉴权服务需使用 HTTPS；本机或私有网络调试可使用 HTTP',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _textModel,
-                  decoration: const InputDecoration(labelText: '文本模型'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _visionModel,
-                  decoration: const InputDecoration(labelText: '多模态模型'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _apiKey,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: '模型 API Key',
-                    helperText: widget.controller.modelConfigured
-                        ? '已保存，可留空不改'
-                        : '尚未配置',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('搜索', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _searchEndpoint,
-                  decoration: const InputDecoration(
-                    labelText: 'Tavily 地址',
-                    helperText: '搜索服务使用独立 Key，不与模型 Key 共用',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _searchKey,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: '搜索 API Key（独立于模型 Key）',
-                    helperText: widget.controller.searchConfigured
-                        ? '已保存，可留空不改'
-                        : '尚未配置',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('个性化', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _instructions,
-                  minLines: 3,
-                  maxLines: 5,
-                  decoration: const InputDecoration(labelText: '分析要求'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _explicit,
-                  minLines: 3,
-                  maxLines: 5,
-                  decoration: const InputDecoration(labelText: '明确兴趣（每行一个）'),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '推断兴趣：${widget.data.settings.inferredInterests.isEmpty ? '尚未形成' : widget.data.settings.inferredInterests.join('、')}',
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _inferred,
-                  minLines: 3,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: '确认的兴趣（每行一个）',
-                    helperText: '你确认的兴趣将保留，不随自动推断变化。',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('回收站', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                const Text('从删除当天起计算。缩短保留期会立即永久清理已到期的资料。'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final days in [3, 7])
-                      ChoiceChip(
-                        label: Text('$days 天'),
-                        selected:
-                            widget.data.settings.trashRetentionDays == days,
-                        onSelected: (_) => _setRetention(context, days),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          _appearanceSection(context),
           SectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,6 +153,130 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('个性化', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _instructions,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(labelText: '分析要求'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _explicit,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(labelText: '明确兴趣（每行一个）'),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '推断兴趣：${widget.data.settings.inferredInterests.isEmpty ? '尚未形成' : widget.data.settings.inferredInterests.join('、')}',
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _inferred,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: '确认的兴趣（每行一个）',
+                    helperText: '你确认的兴趣将保留，不随自动推断变化。',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('模型', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _endpoint,
+                  decoration: const InputDecoration(
+                    labelText: '服务地址',
+                    helperText: '公网鉴权服务需使用 HTTPS；本机或私有网络调试可使用 HTTP',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _textModel,
+                  decoration: const InputDecoration(labelText: '文本模型'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _visionModel,
+                  decoration: const InputDecoration(labelText: '多模态模型'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _apiKey,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: '模型 API Key',
+                    helperText: widget.controller.modelConfigured
+                        ? '已保存，可留空不改'
+                        : '尚未配置',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('搜索', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _searchEndpoint,
+                  decoration: const InputDecoration(
+                    labelText: 'Tavily 地址',
+                    helperText: '搜索服务使用独立 Key，不与模型 Key 共用',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _searchKey,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: '搜索 API Key（独立于模型 Key）',
+                    helperText: widget.controller.searchConfigured
+                        ? '已保存，可留空不改'
+                        : '尚未配置',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('回收站', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text('从删除当天起计算。缩短保留期会立即永久清理已到期的资料。'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final days in [3, 7])
+                      ChoiceChip(
+                        label: Text('$days 天'),
+                        selected:
+                            widget.data.settings.trashRetentionDays == days,
+                        onSelected: (_) => _setRetention(context, days),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          _backupSection(context),
+          SectionCard(
             child: ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.code_outlined),
@@ -295,6 +297,74 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Widget _appearanceSection(BuildContext context) {
+    final selected = widget.controller.data.settings.readingPreset;
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('外观与阅读', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Text(
+            '即时生效，阅读内容与操作保持一致。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          for (final preset in ReadingPreset.values)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: selected == preset
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                child: ListTile(
+                  key: ValueKey('appearance-${preset.name}'),
+                  selected: selected == preset,
+                  enabled: !_savingAppearance,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  title: Text(readingPresetLabel(preset)),
+                  subtitle: Text(switch (preset) {
+                    ReadingPreset.editorial => '舒展正文 · 轻分隔 · 默认',
+                    ReadingPreset.compact => '紧凑列表 · 清晰状态 · 正文不缩小',
+                    ReadingPreset.magazine => '醒目标题 · 章节色面 · 丰富留白',
+                  }),
+                  trailing: Icon(
+                    selected == preset
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                  ),
+                  onTap: () => _setPreset(context, preset),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setPreset(BuildContext context, ReadingPreset preset) async {
+    if (_savingAppearance ||
+        widget.controller.data.settings.readingPreset == preset) {
+      return;
+    }
+    setState(() => _savingAppearance = true);
+    try {
+      await runUiAction(
+        context,
+        () => widget.controller.setReadingPreset(preset),
+      );
+    } finally {
+      if (mounted) setState(() => _savingAppearance = false);
+    }
   }
 
   Widget _backupSection(BuildContext context) {
@@ -497,34 +567,41 @@ class _NotificationPermissionRow extends StatelessWidget {
         : allowed
         ? '已允许'
         : '不可用';
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        allowed == true
-            ? Icons.notifications_active_outlined
-            : Icons.notifications_off_outlined,
-      ),
-      title: Text('系统通知权限：$label'),
-      subtitle: const Text('拒绝权限不会阻止分析；完成后只是不弹出系统通知。'),
-      trailing: Wrap(
-        spacing: 8,
-        children: [
-          OutlinedButton(
-            onPressed: () => runUiAction(
-              context,
-              () => controller.refreshNotificationPermission(),
-            ),
-            child: const Text('刷新'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            allowed == true
+                ? Icons.notifications_active_outlined
+                : Icons.notifications_off_outlined,
           ),
-          FilledButton(
-            onPressed: () => runUiAction(
-              context,
-              () => controller.refreshNotificationPermission(request: true),
+          title: Text('系统通知权限：$label'),
+          subtitle: const Text('拒绝权限不会阻止分析；完成后只是不弹出系统通知。'),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton(
+              onPressed: () => runUiAction(
+                context,
+                () => controller.refreshNotificationPermission(),
+              ),
+              child: const Text('刷新'),
             ),
-            child: const Text('请求权限'),
-          ),
-        ],
-      ),
+            FilledButton(
+              onPressed: () => runUiAction(
+                context,
+                () => controller.refreshNotificationPermission(request: true),
+              ),
+              child: const Text('请求权限'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

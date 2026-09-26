@@ -25,6 +25,63 @@ enum WorkState { pending, reading, done, snoozed }
 
 enum ContentBlockKind { heading, paragraph, list, code, table, image }
 
+enum ReadingPreset { editorial, compact, magazine }
+
+class ReadingSection {
+  String title, body;
+  ReadingSection({this.title = '', this.body = ''});
+  Json toJson() => {'title': title, 'body': body};
+  factory ReadingSection.fromJson(Json j) => ReadingSection(
+    title: j['title'] as String? ?? '',
+    body: j['body'] as String? ?? '',
+  );
+}
+
+class ReadingPresentation {
+  String brief;
+  List<ReadingSection> sections;
+  ReadingPresentation({this.brief = '', List<ReadingSection>? sections})
+    : sections = sections ?? [];
+  bool get isEmpty =>
+      brief.trim().isEmpty && sections.every((s) => s.body.trim().isEmpty);
+  String get fullText {
+    final buffer = StringBuffer();
+    if (brief.trim().isNotEmpty) {
+      buffer
+        ..writeln(brief.trim())
+        ..writeln();
+    }
+    for (final section in sections) {
+      if (section.title.trim().isNotEmpty) {
+        buffer
+          ..writeln(section.title.trim())
+          ..writeln();
+      }
+      if (section.body.trim().isNotEmpty) {
+        buffer
+          ..writeln(section.body.trim())
+          ..writeln();
+      }
+    }
+    return buffer.toString().trimRight();
+  }
+
+  Json toJson() => {
+    'brief': brief,
+    'sections': sections.map((section) => section.toJson()).toList(),
+  };
+  factory ReadingPresentation.fromJson(Json j) => ReadingPresentation(
+    brief: j['brief'] as String? ?? '',
+    sections: (j['sections'] as List? ?? [])
+        .map((section) => ReadingSection.fromJson(json(section)))
+        .where(
+          (section) =>
+              section.title.trim().isNotEmpty || section.body.trim().isNotEmpty,
+        )
+        .toList(),
+  );
+}
+
 class ContentBlock {
   String id, text;
   ContentBlockKind kind;
@@ -156,12 +213,13 @@ class Annotation {
 }
 
 class Insight {
-  String id, finding, change, impact, verdict;
+  String id, title, finding, change, impact, verdict;
   List<EvidenceAnchor> evidence;
   List<String> unknowns;
   bool stale;
   Insight({
     required this.id,
+    this.title = '',
     this.finding = '',
     this.change = '',
     this.impact = '',
@@ -173,6 +231,7 @@ class Insight {
        unknowns = unknowns ?? [];
   Json toJson() => {
     'id': id,
+    'title': title,
     'finding': finding,
     'change': change,
     'impact': impact,
@@ -183,6 +242,7 @@ class Insight {
   };
   factory Insight.fromJson(Json j) => Insight(
     id: j['id'] as String,
+    title: j['title'] as String? ?? '',
     finding: j['finding'] as String? ?? '',
     change: j['change'] as String? ?? '',
     impact: j['impact'] as String? ?? '',
@@ -207,7 +267,7 @@ class Asset {
 }
 
 class Analysis {
-  String summary;
+  String summary, brief;
   bool stale;
   List<String> insights, connections, questions, sourceIds, suggestedTopics;
   List<Insight> structuredInsights;
@@ -215,6 +275,7 @@ class Analysis {
   DateTime createdAt;
   Analysis({
     this.summary = '',
+    this.brief = '',
     this.stale = false,
     this.inputItemIds,
     List<String>? insights,
@@ -233,6 +294,7 @@ class Analysis {
        createdAt = createdAt ?? DateTime.now();
   Json toJson() => {
     'summary': summary,
+    'brief': brief,
     'stale': stale,
     'inputItemIds': inputItemIds,
     'insights': insights,
@@ -245,6 +307,7 @@ class Analysis {
   };
   factory Analysis.fromJson(Json j) => Analysis(
     summary: j['summary'] as String? ?? '',
+    brief: j['brief'] as String? ?? '',
     stale: j['stale'] as bool? ?? false,
     inputItemIds: j['inputItemIds'] == null ? null : strings(j['inputItemIds']),
     insights: strings(j['insights']),
@@ -464,6 +527,7 @@ class Topic {
   List<String>? inputItemIds;
   List<String>? selectedSourceIds, selectedContextIds;
   List<ContextEntry> contextEntries;
+  ReadingPresentation? presentation;
   bool automatic, tracking;
   int intervalHours, callLimit;
   DateTime? lastRun, nextRun, reviewAt, snoozedUntil;
@@ -482,6 +546,7 @@ class Topic {
     this.selectedSourceIds,
     this.selectedContextIds,
     List<ContextEntry>? contextEntries,
+    this.presentation,
     this.automatic = false,
     this.tracking = false,
     this.intervalHours = 24,
@@ -507,6 +572,7 @@ class Topic {
     'selectedSourceIds': selectedSourceIds,
     'selectedContextIds': selectedContextIds,
     'contextEntries': contextEntries.map((e) => e.toJson()).toList(),
+    'presentation': presentation?.toJson(),
     'automatic': automatic,
     'tracking': tracking,
     'intervalHours': intervalHours,
@@ -537,6 +603,9 @@ class Topic {
     contextEntries: (j['contextEntries'] as List? ?? [])
         .map((e) => ContextEntry.fromJson(json(e)))
         .toList(),
+    presentation: j['presentation'] == null
+        ? null
+        : ReadingPresentation.fromJson(json(j['presentation'])),
     automatic: j['automatic'] as bool? ?? false,
     tracking: j['tracking'] as bool? ?? false,
     intervalHours: j['intervalHours'] as int? ?? 24,
@@ -644,6 +713,7 @@ class ResearchRun {
   bool meaningful, requestPending, stale;
   List<String> steps;
   List<ResearchSource> sources;
+  ReadingPresentation? presentation;
   DateTime startedAt;
   DateTime? completedAt;
   ResearchRun({
@@ -663,6 +733,7 @@ class ResearchRun {
     this.stale = false,
     List<String>? steps,
     List<ResearchSource>? sources,
+    this.presentation,
     DateTime? startedAt,
     this.completedAt,
   }) : steps = steps ?? [],
@@ -685,6 +756,7 @@ class ResearchRun {
     'stale': stale,
     'steps': steps,
     'sources': sources.map((s) => s.toJson()).toList(),
+    'presentation': presentation?.toJson(),
     'startedAt': startedAt.toIso8601String(),
     'completedAt': completedAt?.toIso8601String(),
   };
@@ -707,6 +779,9 @@ class ResearchRun {
     sources: (j['sources'] as List? ?? [])
         .map((s) => ResearchSource.fromJson(json(s)))
         .toList(),
+    presentation: j['presentation'] == null
+        ? null
+        : ReadingPresentation.fromJson(json(j['presentation'])),
     startedAt: date(j['startedAt']),
     completedAt: date(j['completedAt']),
   );
@@ -895,6 +970,7 @@ class AppSettings {
   bool debugModelLogging, digestEnabled;
   bool progressNotifications, resultNotifications, digestNotifications;
   bool researchNotifications;
+  ReadingPreset readingPreset;
   int digestHour, digestMinute;
   int _trashRetentionDays;
   int get trashRetentionDays => _trashRetentionDays;
@@ -927,6 +1003,7 @@ class AppSettings {
     this.resultNotifications = true,
     this.digestNotifications = true,
     this.researchNotifications = true,
+    this.readingPreset = ReadingPreset.editorial,
     int trashRetentionDays = 7,
   }) : explicitInterests = explicitInterests ?? [],
        inferredInterests = inferredInterests ?? [],
@@ -951,6 +1028,7 @@ class AppSettings {
     'resultNotifications': resultNotifications,
     'digestNotifications': digestNotifications,
     'researchNotifications': researchNotifications,
+    'readingPreset': readingPreset.name,
     'trashRetentionDays': trashRetentionDays,
   };
   factory AppSettings.fromJson(Json j) => AppSettings(
@@ -972,6 +1050,11 @@ class AppSettings {
     resultNotifications: j['resultNotifications'] as bool? ?? true,
     digestNotifications: j['digestNotifications'] as bool? ?? true,
     researchNotifications: j['researchNotifications'] as bool? ?? true,
+    readingPreset: enumValue(
+      ReadingPreset.values,
+      j['readingPreset'],
+      ReadingPreset.editorial,
+    ),
     trashRetentionDays: j['trashRetentionDays'] == 3 ? 3 : 7,
   );
 }

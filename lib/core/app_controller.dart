@@ -431,6 +431,18 @@ class AppController extends ChangeNotifier {
     _save();
   }
 
+  Future<void> setReadingPreset(ReadingPreset preset) async {
+    if (data.settings.readingPreset == preset) return;
+    final previous = data.settings.readingPreset;
+    data.settings.readingPreset = preset;
+    try {
+      _save();
+    } catch (_) {
+      data.settings.readingPreset = previous;
+      rethrow;
+    }
+  }
+
   String sourceLabel(String id) {
     final item = data.items.where((i) => i.id == id).firstOrNull;
     if (item != null) {
@@ -1404,6 +1416,9 @@ class AppController extends ChangeNotifier {
         }
         _saveCheckpoint('综述已生成', {cacheKey: result, 'requestPending': false});
         topic.overview = overview;
+        topic.presentation = result['presentation'] == null
+            ? null
+            : ReadingPresentation.fromJson(json(result['presentation']));
         topic.inputItemIds = inputs.toList();
         topic.sourceIds = strings(result['sourceIds'])
             .where((id) => chosen.any((i) => i.id == id))
@@ -1677,6 +1692,7 @@ class AppController extends ChangeNotifier {
       // Research mutates a detached working copy. Late content never becomes history.
       run.report = '';
       run.sources.clear();
+      run.presentation = null;
       run.meaningful = false;
       run.status = 'interrupted';
       run.error = '资料或授权已变化，本次研究结果未保存';
@@ -1694,6 +1710,15 @@ class AppController extends ChangeNotifier {
   void _attachResearch(Topic topic, ResearchRun run) {
     topic.overviewStale = run.stale;
     topic.overview = '${run.report}\n\n本次研究及原始来源：[${run.id}]';
+    final presentation = run.presentation == null
+        ? null
+        : ReadingPresentation.fromJson(run.presentation!.toJson());
+    if (presentation != null) {
+      presentation.sections.add(
+        ReadingSection(title: '研究记录', body: '本次研究及原始来源：[${run.id}]'),
+      );
+    }
+    topic.presentation = presentation;
     topic.sourceIds = [run.id];
     topic.inputItemIds = run.inputItemIds?.toList();
   }

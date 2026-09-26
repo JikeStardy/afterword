@@ -12,6 +12,7 @@ import 'common.dart';
 import 'research_detail.dart';
 import 'item_actions.dart';
 import 'developer_page.dart';
+import 'reading_content.dart';
 
 class ArticleDetailPage extends StatefulWidget {
   const ArticleDetailPage({
@@ -112,8 +113,11 @@ class _ArticleDetailView extends StatefulWidget {
 class _ArticleDetailViewState extends State<_ArticleDetailView> {
   final ScrollController _scroll = ScrollController();
   final Map<String, GlobalKey> _blockKeys = <String, GlobalKey>{};
+  final Map<String, GlobalKey> _analysisKeys = <String, GlobalKey>{};
   late double _fontScale;
   bool _initialTargetHandled = false;
+  ReadingPreset? _lastPreset;
+  String? _visibleAnalysisAnchorId;
 
   AppController get controller => widget.controller;
   LibraryItem get item => widget.item;
@@ -127,6 +131,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
     _fontScale = rawScale is num
         ? rawScale.toDouble().clamp(0.85, 1.6).toDouble()
         : 1.0;
+    _scroll.addListener(_captureVisibleAnalysisAnchor);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _restoreInitialPosition();
@@ -134,8 +139,41 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final preset = ReadingLayout.of(context).preset;
+    final previous = _lastPreset;
+    _lastPreset = preset;
+    if (previous != null && previous != preset) {
+      final anchor = _visibleAnalysisAnchorId ?? _firstMountedAnalysisAnchor();
+      final anchorContext = anchor == null
+          ? null
+          : _analysisKeys[anchor]?.currentContext;
+      final topOffset = anchorContext == null
+          ? 0.0
+          : _anchorViewportOffset(anchorContext);
+      if (anchor != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final anchorContext = _analysisKeys[anchor]?.currentContext;
+          if (anchorContext == null) return;
+          final box = anchorContext.findRenderObject() as RenderBox?;
+          if (box == null || !box.attached || !_scroll.hasClients) return;
+          final currentOffset = _anchorViewportOffset(anchorContext);
+          final target = (_scroll.offset + currentOffset - topOffset).clamp(
+            0.0,
+            _scroll.position.maxScrollExtent,
+          );
+          _scroll.jumpTo(target.toDouble());
+        });
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _saveReadingPosition();
+    _scroll.removeListener(_captureVisibleAnalysisAnchor);
     _scroll.dispose();
     super.dispose();
   }
@@ -241,7 +279,12 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                     ),
                   ]),
                   _reader(context, [
-                    _AnalysisSection(controller: controller, item: item),
+                    _AnalysisSection(
+                      controller: controller,
+                      item: item,
+                      fontScale: _fontScale,
+                      analysisKeys: _analysisKeys,
+                    ),
                   ]),
                   _reader(context, [
                     _NotesCard(
@@ -385,61 +428,127 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
     controller.updateReadingPosition(item.id, scrollOffset: _scroll.offset);
   }
 
-  Widget _reader(BuildContext context, List<Widget> children) => ListView(
-    controller: _scroll,
-    padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-    children: [
-      Text(item.title, style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 12),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          Text(kindLabel(item.kind)),
-          Text(shortDate(item.createdAt)),
-          if (!item.isActive) StatusPill(label: item.isTrashed ? '回收站' : '已归档'),
-        ],
+  void _captureVisibleAnalysisAnchor() {
+    if (!_scroll.hasClients) return;
+    final next = _firstVisibleAnalysisAnchor();
+    if (next != null) _visibleAnalysisAnchorId = next;
+  }
+
+  String? _firstVisibleAnalysisAnchor() {
+    final viewport = _readerViewport();
+    if (viewport == null) return _firstMountedAnalysisAnchor();
+    String? closestBelow;
+    double? closestDistance;
+    String? bestOverlap;
+    double bestOverlapHeight = 0;
+    for (final entry in _analysisKeys.entries) {
+      final anchorContext = entry.value.currentContext;
+      if (anchorContext == null) continue;
+      final box = anchorContext.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      final top = box.localToGlobal(Offset.zero).dy;
+      final bottom = top + box.size.height;
+      final overlap =
+          bottom.clamp(viewport.top, viewport.bottom) -
+          top.clamp(viewport.top, viewport.bottom);
+      if (overlap > bestOverlapHeight) {
+        bestOverlapHeight = overlap;
+        bestOverlap = entry.key;
+      }
+      if (top < viewport.top) continue;
+      if (closestDistance == null || top < closestDistance) {
+        closestDistance = top;
+        closestBelow = entry.key;
+      }
+    }
+    return bestOverlap ?? closestBelow ?? _firstMountedAnalysisAnchor();
+  }
+
+  String? _firstMountedAnalysisAnchor() {
+    for (final entry in _analysisKeys.entries) {
+      if (entry.value.currentContext != null) return entry.key;
+    }
+    return null;
+  }
+
+  Rect? _readerViewport() {
+    final renderObject = context.findRenderObject() as RenderBox?;
+    if (renderObject == null || !renderObject.attached) return null;
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & renderObject.size;
+  }
+
+  double _anchorViewportOffset(BuildContext anchorContext) {
+    final viewport = _readerViewport();
+    final box = anchorContext.findRenderObject() as RenderBox?;
+    if (viewport == null || box == null || !box.attached) return 0;
+    return box.localToGlobal(Offset.zero).dy - viewport.top;
+  }
+
+  Widget _reader(BuildContext context, List<Widget> children) {
+    final layout = ReadingLayout.of(context);
+    return ListView(
+      controller: _scroll,
+      padding: EdgeInsets.fromLTRB(
+        layout.pagePadding,
+        layout.sectionGap,
+        layout.pagePadding,
+        40,
       ),
-      if (!item.isActive)
-        const Padding(
-          padding: EdgeInsets.only(top: 12),
-          child: Text('当前资料仅供阅读，不参与新的分析和研究。恢复到使用中后可重新分析。'),
+      children: [
+        Text(item.title, style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            Text(kindLabel(item.kind)),
+            Text(shortDate(item.createdAt)),
+            if (!item.isActive)
+              StatusPill(label: item.isTrashed ? '回收站' : '已归档'),
+          ],
         ),
-      if (item.warning.isNotEmpty || item.error.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.error.isNotEmpty ? item.error : item.warning,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              TextButton.icon(
-                onPressed: () =>
-                    openDiagnostics(context, controller, entityId: item.id),
-                icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('查看任务日志'),
-              ),
-              if (item.kind == ItemKind.web &&
-                  item.warning.contains('图片') &&
-                  item.isActive)
-                TextButton.icon(
-                  onPressed: () => runUiAction(
-                    context,
-                    () => controller.retryImages(item.id),
-                    success: '补图已提交',
-                  ),
-                  icon: const Icon(Icons.image_search_outlined),
-                  label: const Text('重试补图'),
-                ),
-            ],
+        if (!item.isActive)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Text('当前资料仅供阅读，不参与新的分析和研究。恢复到使用中后可重新分析。'),
           ),
-        ),
-      const SizedBox(height: 24),
-      ...children,
-    ],
-  );
+        if (item.warning.isNotEmpty || item.error.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.error.isNotEmpty ? item.error : item.warning,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                TextButton.icon(
+                  onPressed: () =>
+                      openDiagnostics(context, controller, entityId: item.id),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('查看任务日志'),
+                ),
+                if (item.kind == ItemKind.web &&
+                    item.warning.contains('图片') &&
+                    item.isActive)
+                  TextButton.icon(
+                    onPressed: () => runUiAction(
+                      context,
+                      () => controller.retryImages(item.id),
+                      success: '补图已提交',
+                    ),
+                    icon: const Icon(Icons.image_search_outlined),
+                    label: const Text('重试补图'),
+                  ),
+              ],
+            ),
+          ),
+        SizedBox(height: layout.sectionGap),
+        ...children,
+      ],
+    );
+  }
 }
 
 class _RevisionHistoryCard extends StatelessWidget {
@@ -1064,10 +1173,17 @@ class _AutosaveNoteDialogState extends State<_AutosaveNoteDialog> {
 }
 
 class _AnalysisSection extends StatelessWidget {
-  const _AnalysisSection({required this.controller, required this.item});
+  const _AnalysisSection({
+    required this.controller,
+    required this.item,
+    required this.fontScale,
+    required this.analysisKeys,
+  });
 
   final AppController controller;
   final LibraryItem item;
+  final double fontScale;
+  final Map<String, GlobalKey> analysisKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -1095,84 +1211,127 @@ class _AnalysisSection extends StatelessWidget {
         ),
       );
     }
+    final layout = ReadingLayout.of(context);
+    final analysisJson = analysis.toJson();
+    final structured = KnowledgeService.structuredInsights(analysis);
+    final brief = stringField(analysisJson, 'brief');
+    final hasBrief = brief.isNotEmpty;
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('观点卡片', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
           if (analysis.toJson()['stale'] == true) ...[
             const StatusPill(label: '内容或背景已变化，建议更新'),
-            const SizedBox(height: 8),
+            SizedBox(height: layout.rowPadding),
           ],
-          SelectableText(
-            readerCitationText(
-              analysis.summary,
-              analysis.sourceIds,
+          if (brief.isNotEmpty || analysis.summary.trim().isNotEmpty) ...[
+            Text('导读', style: Theme.of(context).textTheme.bodySmall),
+            SizedBox(height: layout.rowPadding * 0.5),
+            ReadingContent(
+              brief: brief,
+              fallback: analysis.summary,
+              sources: analysis.sourceIds,
               labelForSource: controller.sourceLabel,
+              fontScale: fontScale,
+              legacyLabel: structured.isEmpty && !hasBrief ? null : '完整总结',
+              initiallyExpandFallback: structured.isEmpty && !hasBrief,
             ),
-            style: const TextStyle(fontSize: 17, height: 1.7),
-          ),
-          const SizedBox(height: 12),
-          for (final insight in KnowledgeService.structuredInsights(analysis))
-            _StructuredInsightTile(
-              insight: insight,
-              controller: controller,
-              itemId: item.id,
-              labelForSource: controller.sourceLabel,
-            ),
-          for (final insight in analysis.insights)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.lightbulb_outline),
-              title: Text(
-                readerCitationText(
-                  insight,
-                  analysis.sourceIds,
-                  labelForSource: controller.sourceLabel,
-                ),
+            SizedBox(height: layout.sectionGap),
+          ],
+          for (final insight in structured.indexed)
+            KeyedSubtree(
+              key: ValueKey(_insightUiKey(insight.$2, insight.$1)),
+              child: _StructuredInsightTile(
+                key: _keyForInsight(insight.$2, insight.$1),
+                insight: insight.$2,
+                fallbackTitle: _insightTitle(insight.$2, insight.$1),
+                uiId: _insightUiId(insight.$2, insight.$1),
+                controller: controller,
+                itemId: item.id,
+                labelForSource: controller.sourceLabel,
+                fontScale: fontScale,
               ),
             ),
+          if (analysis.insights.isNotEmpty) ...[
+            if (structured.isNotEmpty) SizedBox(height: layout.sectionGap),
+            if (structured.isEmpty)
+              ReadingContent(
+                title: '观点',
+                sections: [
+                  for (final insight in analysis.insights.indexed)
+                    ReadingSectionData(
+                      title: '观点 ${insight.$1 + 1}',
+                      body: insight.$2,
+                    ),
+                ],
+                sources: analysis.sourceIds,
+                labelForSource: controller.sourceLabel,
+                fontScale: fontScale,
+              )
+            else
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('此前生成的观点'),
+                subtitle: const Text('查看此前生成的观点内容'),
+                children: [
+                  for (final insight in analysis.insights)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.lightbulb_outline),
+                      title: Text(
+                        readerCitationText(
+                          insight,
+                          analysis.sourceIds,
+                          labelForSource: controller.sourceLabel,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+          ],
           if (analysis.connections.isNotEmpty) ...[
-            const Divider(),
-            Text('与已有资料的关系', style: Theme.of(context).textTheme.titleSmall),
-            for (final connection in analysis.connections)
-              Text(
-                '• ${readerCitationText(connection, analysis.sourceIds, labelForSource: controller.sourceLabel)}',
-              ),
+            SizedBox(height: layout.sectionGap),
+            ReadingContent(
+              title: '与已有资料的关系',
+              sections: [
+                for (final connection in analysis.connections.indexed)
+                  ReadingSectionData(
+                    title: '关系 ${connection.$1 + 1}',
+                    body: connection.$2,
+                  ),
+              ],
+              sources: analysis.sourceIds,
+              labelForSource: controller.sourceLabel,
+              fontScale: fontScale,
+            ),
           ],
           if (analysis.questions.isNotEmpty) ...[
-            const Divider(),
+            SizedBox(height: layout.sectionGap),
             Text('研究建议', style: Theme.of(context).textTheme.titleSmall),
-            for (final question in analysis.questions)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  readerCitationText(
-                    question,
+            SizedBox(height: layout.rowPadding),
+            for (final question in analysis.questions.indexed)
+              Padding(
+                padding: EdgeInsets.only(bottom: layout.rowPadding),
+                child: _QuestionRow(
+                  question: readerCitationText(
+                    question.$2,
                     analysis.sourceIds,
                     labelForSource: controller.sourceLabel,
                   ),
-                ),
-                subtitle: Align(
-                  alignment: Alignment.centerLeft,
-                  child: FilledButton(
-                    onPressed: item.isActive && analysis.inputItemIds != null
-                        ? () => _confirmResearch(context, question)
-                        : null,
-                    child: const Text('确认研究'),
-                  ),
+                  enabled: item.isActive && analysis.inputItemIds != null,
+                  onConfirm: () => _confirmResearch(context, question.$2),
                 ),
               ),
           ],
+          SizedBox(height: layout.sectionGap),
           const Divider(),
           SourceList(
             sources: analysis.sourceIds,
             labelForSource: controller.sourceLabel,
             onSourceTap: (source) => _openSource(context, source),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: layout.rowPadding),
           SegmentedButton<int>(
             segments: const [
               ButtonSegment(value: -1, label: Text('无用')),
@@ -1236,76 +1395,215 @@ class _AnalysisSection extends StatelessWidget {
   Future<void> _queueAnalysis(String itemId) async {
     await controller.queueAnalysis(itemId);
   }
+
+  static String _insightTitle(Json insight, int index) {
+    final title = stringField(insight, 'title');
+    if (title.isNotEmpty) return title;
+    return '观点 ${(index + 1).toString().padLeft(2, '0')}';
+  }
+
+  static String _insightUiId(Json insight, int index) {
+    final id = (insight['id'] as String? ?? '').trim();
+    return id.isEmpty ? 'row-$index' : '$id-$index';
+  }
+
+  static String _insightUiKey(Json insight, int index) {
+    return 'insight-${_insightUiId(insight, index)}';
+  }
+
+  GlobalKey _keyForInsight(Json insight, int index) {
+    final id = _insightUiId(insight, index);
+    return analysisKeys.putIfAbsent(id, GlobalKey.new);
+  }
+}
+
+class _QuestionRow extends StatelessWidget {
+  const _QuestionRow({
+    required this.question,
+    required this.enabled,
+    required this.onConfirm,
+  });
+
+  final String question;
+  final bool enabled;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(
+              question,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: enabled ? onConfirm : null,
+                icon: const Icon(Icons.travel_explore_outlined),
+                label: const Text('确认研究'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _StructuredInsightTile extends StatelessWidget {
   const _StructuredInsightTile({
+    super.key,
     required this.insight,
+    required this.fallbackTitle,
+    required this.uiId,
     required this.controller,
     required this.itemId,
     required this.labelForSource,
+    required this.fontScale,
   });
 
   final Json insight;
+  final String fallbackTitle;
+  final String uiId;
   final AppController controller;
   final String itemId;
   final String Function(String source) labelForSource;
+  final double fontScale;
 
   @override
   Widget build(BuildContext context) {
     final evidence = insight['evidence'];
     final unknowns = insight['unknowns'];
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
+    final layout = ReadingLayout.of(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: layout.sectionGap),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.only(bottom: layout.rowPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.lightbulb_outline),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    insight['finding'] as String? ?? '发现',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  tooltip: '反馈',
-                  icon: const Icon(Icons.rate_review_outlined),
-                  initialValue: _menuValue(insight['verdict'] as String? ?? ''),
-                  onSelected: (value) => controller.setInsightVerdict(
-                    itemId,
-                    insight['id'] as String? ?? '',
-                    value,
-                  ),
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: '认可', child: Text('认可')),
-                    PopupMenuItem(value: '存疑', child: Text('存疑')),
-                    PopupMenuItem(value: '过时', child: Text('过时')),
-                    PopupMenuItem(value: '无关', child: Text('无关')),
-                  ],
-                ),
-              ],
+            ReadingHeading(
+              stringField(insight, 'title').isEmpty
+                  ? fallbackTitle
+                  : stringField(insight, 'title'),
+              fontScale: fontScale,
             ),
-            const SizedBox(height: 8),
-            if ((insight['change'] as String? ?? '').isNotEmpty)
-              Text('相对已有认识：${insight['change']}'),
-            if ((insight['impact'] as String? ?? '').isNotEmpty)
-              Text('个人影响：${insight['impact']}'),
+            SizedBox(height: layout.rowPadding),
+            if (stringField(insight, 'finding').isNotEmpty)
+              _InsightParagraph(
+                label: '发现',
+                text: stringField(insight, 'finding'),
+                fontScale: fontScale,
+              ),
+            if ((insight['change'] as String? ?? '').isNotEmpty) ...[
+              SizedBox(height: layout.rowPadding),
+              _InsightParagraph(
+                label: '变化',
+                text: stringField(insight, 'change'),
+                fontScale: fontScale,
+              ),
+            ],
+            if ((insight['impact'] as String? ?? '').isNotEmpty) ...[
+              SizedBox(height: layout.rowPadding),
+              _InsightParagraph(
+                label: '影响',
+                text: stringField(insight, 'impact'),
+                fontScale: fontScale,
+              ),
+            ],
             if (unknowns is List && unknowns.isNotEmpty)
-              Text('未知：${unknowns.join('；')}'),
-            const Divider(),
-            Text('证据', style: Theme.of(context).textTheme.titleSmall),
-            if (evidence is List)
-              for (final raw in evidence.whereType<Map>())
-                _EvidenceLine(
-                  anchor: Map<String, dynamic>.from(raw),
-                  controller: controller,
-                  labelForSource: labelForSource,
+              Padding(
+                padding: EdgeInsets.only(top: layout.rowPadding),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer
+                        .withValues(alpha: 0.45),
+                    border: Border(
+                      left: BorderSide(
+                        width: 3,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(layout.rowPadding),
+                    child: SelectableText(
+                      '未知与限制：${unknowns.whereType<String>().join('；')}',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 16 * fontScale,
+                        height: layout.bodyHeight,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
                 ),
+              ),
+            SizedBox(height: layout.rowPadding),
+            if (evidence is List)
+              _EvidenceDisclosure(
+                key: ValueKey('evidence-$uiId'),
+                anchors: evidence
+                    .whereType<Map>()
+                    .map((raw) => Map<String, dynamic>.from(raw))
+                    .toList(growable: false),
+                controller: controller,
+                labelForSource: labelForSource,
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: PopupMenuButton<String>(
+                tooltip: '反馈',
+                initialValue: _menuValue(insight['verdict'] as String? ?? ''),
+                onSelected: (value) => controller.setInsightVerdict(
+                  itemId,
+                  insight['id'] as String? ?? '',
+                  value,
+                ),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: '认可', child: Text('认可')),
+                  PopupMenuItem(value: '存疑', child: Text('存疑')),
+                  PopupMenuItem(value: '过时', child: Text('过时')),
+                  PopupMenuItem(value: '无关', child: Text('无关')),
+                ],
+                child: ConstrainedBox(
+                  key: ValueKey('insight-feedback-$uiId'),
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.rate_review_outlined,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '反馈',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Divider(height: layout.sectionGap),
           ],
         ),
       ),
@@ -1324,6 +1622,69 @@ class _StructuredInsightTile extends StatelessWidget {
   String? _menuValue(String value) {
     final label = _verdictLabel(value);
     return {'认可', '存疑', '过时', '无关'}.contains(label) ? label : null;
+  }
+}
+
+class _InsightParagraph extends StatelessWidget {
+  const _InsightParagraph({
+    required this.label,
+    required this.text,
+    required this.fontScale,
+  });
+
+  final String label;
+  final String text;
+  final double fontScale;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 4),
+        SelectableText(
+          text,
+          style: Theme.of(context).textTheme.bodyLarge
+              ?.copyWith(fontSize: 17 * fontScale, height: layout.bodyHeight),
+        ),
+      ],
+    );
+  }
+}
+
+class _EvidenceDisclosure extends StatelessWidget {
+  const _EvidenceDisclosure({
+    super.key,
+    required this.anchors,
+    required this.controller,
+    required this.labelForSource,
+  });
+
+  final List<Json> anchors;
+  final AppController controller;
+  final String Function(String source) labelForSource;
+
+  @override
+  Widget build(BuildContext context) {
+    if (anchors.isEmpty) {
+      return const Text('证据：暂无可定位来源');
+    }
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      title: Text('证据 · ${anchors.length}'),
+      subtitle: const Text('展开查看摘录和原文位置'),
+      children: [
+        for (final anchor in anchors)
+          _EvidenceLine(
+            anchor: anchor,
+            controller: controller,
+            labelForSource: labelForSource,
+          ),
+      ],
+    );
   }
 }
 

@@ -285,7 +285,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(focus.hasFocus, isTrue);
-      await tester.ensureVisible(find.text('阅读资料 one'));
+      await tester.scrollUntilVisible(
+        find.text('阅读资料 one'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await Scrollable.ensureVisible(
+        tester.element(find.text('阅读资料 one')),
+        alignment: .5,
+      );
       await tester.pumpAndSettle();
       expect(find.text('阅读资料 one').hitTestable(), findsOneWidget);
       expect(focus.hasFocus, isTrue);
@@ -295,16 +308,43 @@ void main() {
       expect(find.byTooltip('管理资料').hitTestable(), findsOneWidget);
       await tester.tap(find.byTooltip('退出多选'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byType(SearchBar));
+      await tester.scrollUntilVisible(
+        find.byType(SearchBar),
+        -180,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.enterText(find.byType(SearchBar), 'missing');
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('没有匹配的资料'));
+      await tester.scrollUntilVisible(
+        find.text('没有匹配的资料'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.pumpAndSettle();
       expect(find.text('没有匹配的资料').hitTestable(), findsOneWidget);
       await c.purgeItems(['one']);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('回收站为空'));
+      await tester.scrollUntilVisible(
+        find.text('回收站为空'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byType(CustomScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.pumpAndSettle();
       expect(find.text('回收站为空').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);

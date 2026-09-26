@@ -83,7 +83,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.text('原文'), findsOneWidget);
-      expect(find.text('观点卡片'), findsOneWidget);
+      expect(find.text('分析'), findsWidgets);
+      expect(
+        find.widgetWithText(SelectableText, '这篇文章主张用观点卡片沉淀认识。'),
+        findsOneWidget,
+      );
       expect(find.text('研究建议'), findsOneWidget);
       expect(find.text('确认研究'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -158,13 +162,28 @@ void main() {
       await tester.tap(find.text('个人知识管理'));
       await tester.pumpAndSettle();
 
+      expect(find.textContaining('外部研究来源 [2]'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('关联外部研究'),
+        350,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(find.text('关联外部研究'), findsOneWidget);
-      expect(find.textContaining('外部研究来源 [1]'), findsOneWidget);
       expect(find.textContaining('1 个来源'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('授权追踪'),
         350,
-        scrollable: find.byType(Scrollable).last,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
       expect(find.text('授权追踪'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -177,11 +196,26 @@ void main() {
     await tester.pumpWidget(ReadlaterApp(controller: controller));
     await tester.tap(find.byIcon(Icons.tune_outlined));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView), const Offset(0, -520));
-    await tester.pumpAndSettle();
-
+    final scrollable = find
+        .descendant(
+          of: find.byType(ListView).last,
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('搜索 API Key（独立于模型 Key）'),
+      400,
+      scrollable: scrollable,
+      maxScrolls: 30,
+    );
     expect(find.text('搜索 API Key（独立于模型 Key）'), findsOneWidget);
     expect(find.text('搜索服务使用独立 Key，不与模型 Key 共用'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('公网鉴权服务需使用 HTTPS；本机或私有网络调试可使用 HTTP'),
+      -300,
+      scrollable: scrollable,
+      maxScrolls: 30,
+    );
     expect(find.text('公网鉴权服务需使用 HTTPS；本机或私有网络调试可使用 HTTP'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
