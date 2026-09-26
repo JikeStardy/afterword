@@ -594,10 +594,23 @@ extension PersonalController on AppController {
   Future<void> retryJob(String jobId) async {
     final job = runtime.jobs.firstWhere((j) => j.id == jobId);
     if (job.status == 'running') return;
+    if (job.checkpoint['sourceReplaced'] == true) {
+      throw StateError('正文已补全，旧任务不能重试；请从资料页提交新的任务');
+    }
     if (['capture', 'analysis', 'fetch'].contains(job.type)) {
       _requireActive(_item(job.entityId));
     }
+    final revision = _lifecycleRevision;
     await _startUserWork();
+    try {
+      _guard(revision);
+      if (job.checkpoint['sourceReplaced'] == true) {
+        throw StateError('正文已补全，请从资料页提交新的任务');
+      }
+    } catch (_) {
+      await _stopServiceIfIdle();
+      rethrow;
+    }
     job.status = 'queued';
     job.error = '';
     job.attempts = 0;
@@ -607,8 +620,12 @@ extension PersonalController on AppController {
       job.checkpoint.removeWhere(
         (key, _) => !const {
           'fetched',
+          'articleFetched',
           'imageUrls',
           'savedImages',
+          'contentVersion',
+          'bodyOrigin',
+          'sourceReplaced',
           'configuration',
         }.contains(key),
       );

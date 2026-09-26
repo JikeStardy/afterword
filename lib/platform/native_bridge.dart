@@ -1,4 +1,47 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
+
+class WebArticleCapture {
+  const WebArticleCapture({required this.url, required this.html});
+  final String url, html;
+
+  static bool allowsUrl(String url) {
+    final uri = Uri.tryParse(url);
+    return uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'mp.weixin.qq.com' &&
+        uri.userInfo.isEmpty &&
+        uri.port == 443;
+  }
+
+  static bool isSameArticle(String original, String current) {
+    if (!allowsUrl(original) || !allowsUrl(current)) return false;
+    String identity(String value) {
+      final uri = Uri.parse(value);
+      if (uri.path.startsWith('/s/') && uri.path.length > 3) return uri.path;
+      final query = uri.queryParameters;
+      if (uri.path == '/s' &&
+          (query['__biz'] ?? '').isNotEmpty &&
+          (query['mid'] ?? '').isNotEmpty) {
+        return jsonEncode([query['__biz'], query['mid'], query['idx'] ?? '1']);
+      }
+      return uri.replace(fragment: '').toString();
+    }
+
+    return identity(original) == identity(current);
+  }
+
+  void validate() {
+    if (!allowsUrl(url) || html.trim().isEmpty) {
+      throw const FormatException('页面内容或来源无效，请重新打开原文章');
+    }
+    if (html.length > 5 * 1024 * 1024 ||
+        utf8.encode(html).length > 5 * 1024 * 1024) {
+      throw const FormatException('页面内容超过 5 MB，请改用粘贴正文');
+    }
+  }
+}
 
 class SharedInput {
   const SharedInput({
@@ -330,6 +373,30 @@ class NativeBridge {
       await _channel.invokeMethod<void>('openUrl', {'url': url});
     } on MissingPluginException {
       throw UnsupportedError('当前平台尚不支持打开来源链接');
+    }
+  }
+
+  Future<WebArticleCapture?> captureWebArticle(String url) async {
+    if (!WebArticleCapture.allowsUrl(url)) {
+      throw const FormatException('页面保存仅支持 HTTPS 微信公众号链接');
+    }
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'captureWebArticle',
+        {'url': url},
+      );
+      if (result == null) return null;
+      if (result['url'] is! String || result['html'] is! String) {
+        throw const FormatException('页面返回内容无效，请重试');
+      }
+      final capture = WebArticleCapture(
+        url: result['url'] as String,
+        html: result['html'] as String,
+      );
+      capture.validate();
+      return capture;
+    } on MissingPluginException {
+      throw UnsupportedError('当前平台不支持页面保存，可改用粘贴正文');
     }
   }
 }

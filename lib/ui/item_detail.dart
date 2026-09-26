@@ -229,6 +229,8 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                         revisions: item.contentHistory,
                         fontScale: _fontScale,
                       ),
+                    if (_shouldShowWebRecovery(item))
+                      _WebRecoveryPanel(controller: controller, item: item),
                     _StructuredReader(
                       controller: controller,
                       item: item,
@@ -440,6 +442,257 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
       ...children,
     ],
   );
+}
+
+bool _shouldShowWebRecovery(LibraryItem item) {
+  if (item.kind != ItemKind.web) return false;
+  if (item.bodyOrigin.isNotEmpty) return true;
+  return _needsWebRecovery(item);
+}
+
+bool _needsWebRecovery(LibraryItem item) {
+  return item.body.trim().isEmpty || item.error.startsWith('正文提取失败');
+}
+
+class _WebRecoveryPanel extends StatefulWidget {
+  const _WebRecoveryPanel({required this.controller, required this.item});
+
+  final AppController controller;
+  final LibraryItem item;
+
+  @override
+  State<_WebRecoveryPanel> createState() => _WebRecoveryPanelState();
+}
+
+class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
+  bool _opening = false, _saving = false;
+
+  bool get _canOpenWebPage {
+    final uri = Uri.tryParse(widget.item.url);
+    return uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'mp.weixin.qq.com' &&
+        uri.userInfo.isEmpty &&
+        uri.port == 443;
+  }
+
+  bool get _disabled => !widget.item.isActive || _opening || _saving;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final bodyOrigin = widget.item.bodyOrigin;
+    final needsRecovery = _needsWebRecovery(widget.item);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.travel_explore_outlined, color: colors.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        needsRecovery ? '补全网页正文' : '网页正文已保存',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        needsRecovery
+                            ? '链接仍保留。可打开页面完成验证后保存正文，或把正文粘贴到这份资料里。'
+                            : '来源链接仍保留。',
+                      ),
+                      if (bodyOrigin == 'pasted') ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '正文由你粘贴，来源链接保留',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ] else if (bodyOrigin == 'webview') ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '正文从打开的页面保存',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                      if (!widget.item.isActive) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          widget.item.isTrashed
+                              ? '资料在回收站，恢复后才能补正文。'
+                              : '资料已归档，取消归档后才能补正文。',
+                          style: TextStyle(color: colors.error),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (needsRecovery) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_canOpenWebPage)
+                    FilledButton.icon(
+                      onPressed: _disabled ? null : _recoverFromWebPage,
+                      icon: _opening
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.open_in_browser_outlined),
+                      label: const Text('打开页面保存'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: _disabled ? null : _showPasteDialog,
+                    icon: _saving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.edit_note_outlined),
+                    label: const Text('粘贴正文'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _recoverFromWebPage() async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    try {
+      final saved = await widget.controller.recoverWebArticle(widget.item.id);
+      if (!mounted) return;
+      if (saved) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('正文已保存')));
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  Future<void> _showPasteDialog() async {
+    final result = await showDialog<({String title, String body})>(
+      context: context,
+      builder: (context) => const _PasteWebArticleDialog(),
+    );
+    if (!mounted) return;
+    if (result == null || _saving) return;
+    setState(() => _saving = true);
+    try {
+      await widget.controller.supplementWebArticle(
+        widget.item.id,
+        body: result.body,
+        title: result.title,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('正文已保存')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+}
+
+class _PasteWebArticleDialog extends StatefulWidget {
+  const _PasteWebArticleDialog();
+
+  @override
+  State<_PasteWebArticleDialog> createState() => _PasteWebArticleDialogState();
+}
+
+class _PasteWebArticleDialogState extends State<_PasteWebArticleDialog> {
+  final TextEditingController _title = TextEditingController();
+  final TextEditingController _body = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _body.text.trim().isNotEmpty;
+    return AlertDialog(
+      title: const Text('粘贴正文'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _title,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: '标题，可选'),
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: TextField(
+                  controller: _body,
+                  autofocus: true,
+                  minLines: 8,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  decoration: const InputDecoration(
+                    labelText: '正文',
+                    alignLabelWithHint: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: canSave
+              ? () => Navigator.pop(context, (
+                  title: _title.text.trim(),
+                  body: _body.text.trim(),
+                ))
+              : null,
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
 }
 
 class _RevisionHistoryCard extends StatelessWidget {

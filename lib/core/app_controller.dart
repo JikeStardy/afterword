@@ -18,6 +18,7 @@ import 'store.dart';
 
 part 'task_controller.dart';
 part 'personal_controller.dart';
+part 'web_capture_controller.dart';
 
 abstract class SecretStore {
   Future<String?> read(String key);
@@ -51,6 +52,7 @@ class AppController extends ChangeNotifier {
   bool _foreground = false;
   bool _serviceStarted = false;
   final Map<String, Timer> _refreshTimers = {};
+  final Set<String> _openWebCaptures = {};
   Map<String, String>? pendingNavigation;
   bool? notificationsAllowed;
   String? lastError;
@@ -556,64 +558,13 @@ class AppController extends ChangeNotifier {
           () => content.fetchArticle(item.url),
         );
         _guard(revision);
-        if (item.body.isNotEmpty && item.body != article.body) {
-          item.contentHistory.add(
-            ContentRevision(
-              version: item.contentVersion,
-              title: item.title,
-              body: item.body,
-              blocks: item.contentBlocks
-                  .map((block) => ContentBlock.fromJson(block.toJson()))
-                  .toList(),
-            ),
-          );
-          item.contentVersion++;
-          for (final annotation in item.annotations) {
-            annotation.anchor.unresolved = true;
-          }
-          if (item.analysis != null) item.analysis!.stale = true;
-          for (final dependent in data.items) {
-            if (dependent.analysis?.inputItemIds?.contains(item.id) == true) {
-              dependent.analysis!.stale = true;
-            }
-          }
-          for (final topic in data.topics) {
-            if (topic.inputItemIds?.contains(item.id) == true) {
-              topic.overviewStale = true;
-            }
-          }
-          item.readingPosition = null;
-        }
-        item.title = article.title;
-        item.body = article.body;
-        item.contentBlocks = article.contentBlocks
-            .map(
-              (block) => ContentBlock(
-                id: block.id,
-                kind: enumValue(
-                  ContentBlockKind.values,
-                  block.kind,
-                  ContentBlockKind.paragraph,
-                ),
-                text: block.text,
-                level: block.level ?? 0,
-                items: block.kind == 'list' ? block.text.split('\n') : [],
-                rows: block.kind == 'table'
-                    ? block.text
-                          .split('\n')
-                          .map((row) => row.split('\t'))
-                          .toList()
-                    : [],
-                assetId: block.imageUrl,
-                alt: block.text,
-              ),
-            )
-            .toList();
-        item.status = 'saved';
+        _replaceWebBody(item, article, origin: 'http');
         imageUrls = article.imageUrls;
         _saveCheckpoint('正文已保存', {
           'imageUrls': imageUrls,
           'articleFetched': true,
+          'contentVersion': item.contentVersion,
+          'bodyOrigin': item.bodyOrigin,
         });
         _save();
       }

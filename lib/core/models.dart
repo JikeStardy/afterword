@@ -261,7 +261,7 @@ class Analysis {
 
 class ContentRevision {
   final int version;
-  final String title, body;
+  final String title, body, bodyOrigin;
   final List<ContentBlock> blocks;
   final DateTime savedAt;
   ContentRevision({
@@ -269,6 +269,7 @@ class ContentRevision {
     required this.title,
     required this.body,
     required this.blocks,
+    this.bodyOrigin = '',
     DateTime? savedAt,
   }) : savedAt = savedAt ?? DateTime.now();
   Json toJson() => {
@@ -276,12 +277,14 @@ class ContentRevision {
     'title': title,
     'body': body,
     'blocks': blocks.map((block) => block.toJson()).toList(),
+    'bodyOrigin': bodyOrigin,
     'savedAt': savedAt.toIso8601String(),
   };
   factory ContentRevision.fromJson(Json j) => ContentRevision(
     version: j['version'] as int,
     title: j['title'] as String,
     body: j['body'] as String,
+    bodyOrigin: j['bodyOrigin'] as String? ?? '',
     blocks: (j['blocks'] as List? ?? [])
         .map((block) => ContentBlock.fromJson(json(block)))
         .toList(),
@@ -290,7 +293,7 @@ class ContentRevision {
 }
 
 class LibraryItem {
-  String id, title, url, body, notes, status, error, warning;
+  String id, title, url, body, notes, status, error, warning, bodyOrigin;
   ItemKind kind;
   List<Asset> assets;
   Analysis? analysis;
@@ -316,6 +319,7 @@ class LibraryItem {
     required this.kind,
     this.url = '',
     this.body = '',
+    this.bodyOrigin = '',
     this.notes = '',
     this.status = 'saved',
     this.error = '',
@@ -349,6 +353,7 @@ class LibraryItem {
     'title': title,
     'url': url,
     'kind': kind.name,
+    'bodyOrigin': bodyOrigin,
     'body': body,
     'notes': notes,
     'status': status,
@@ -382,6 +387,7 @@ class LibraryItem {
     kind: ItemKind.values.byName(j['kind'] as String),
     url: j['url'] as String? ?? '',
     body: j['body'] as String? ?? '',
+    bodyOrigin: j['bodyOrigin'] as String? ?? '',
     notes: j['notes'] as String? ?? '',
     status: j['status'] as String? ?? 'saved',
     error: j['error'] as String? ?? '',

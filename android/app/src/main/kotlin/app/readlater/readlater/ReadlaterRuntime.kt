@@ -75,6 +75,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
     private var dartBackgroundOwner = false
     private val activeCancelledShareIds = mutableSetOf<String>()
     private val activeShareIds = mutableSetOf<String>()
+    private var activeWebCapture: WebArticleCaptureDialog? = null
 
     fun ensureEngine(mode: RuntimeMode): FlutterEngine {
         synchronized(this) {
@@ -104,6 +105,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
 
     fun detachActivity(leaving: MainActivity) {
         if (activity === leaving) activity = null
+        activeWebCapture?.cancelFromHost()
     }
 
     fun handleLaunchIntent(intent: Intent?) {
@@ -356,6 +358,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
                 "notificationStatus" -> result.success(notificationAllowed())
                 "openFile" -> openFile(call, result)
                 "openUrl" -> openUrl(call, result)
+                "captureWebArticle" -> captureWebArticle(call, result)
                 "startBackgroundWork" -> {
                     if (startBackgroundWork()) {
                         result.success(null)
@@ -386,6 +389,55 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
                 }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun captureWebArticle(call: MethodCall, result: MethodChannel.Result) {
+        val url = call.argument<String>("url").orEmpty()
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("activity_required", "微信公众号回退需要当前可见页面。", null)
+            return
+        }
+        if (activeWebCapture != null) {
+            result.error("capture_in_progress", "已有微信公众号回退窗口正在打开。", null)
+            return
+        }
+        val validated = WebArticleCaptureDialog.validateWeChatArticleUrl(url)
+        if (validated == null) {
+            result.error(
+                "invalid_wechat_url",
+                "仅支持 https://mp.weixin.qq.com 的公众号文章链接。",
+                null,
+            )
+            return
+        }
+        var completed = false
+        fun finish(block: () -> Unit) {
+            if (completed) return
+            completed = true
+            activeWebCapture = null
+            block()
+        }
+        val dialog = WebArticleCaptureDialog(
+            activity = currentActivity,
+            initialUrl = validated,
+            onComplete = { captured ->
+                finish { result.success(captured) }
+            },
+            onClosed = {
+                if (!completed) {
+                    finish { result.success(null) }
+                }
+            },
+        )
+        activeWebCapture = dialog
+        try {
+            dialog.show()
+        } catch (error: Exception) {
+            activeWebCapture = null
+            dialog.disposeSilently()
+            result.error("capture_unavailable", "微信公众号回退窗口无法打开。", null)
         }
     }
 

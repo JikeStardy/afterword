@@ -19,6 +19,82 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test(
+    'visible capture validates URLs and native payload, cancellation is null',
+    () async {
+      Object? reply;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return reply;
+          });
+      const source = 'https://mp.weixin.qq.com/s/article';
+      expect(await bridge.captureWebArticle(source), isNull);
+      expect(calls.single.method, 'captureWebArticle');
+      for (final unsafe in [
+        'http://mp.weixin.qq.com/s/article',
+        'https://mp.weixin.qq.com.evil.example/s/a',
+        'https://user@mp.weixin.qq.com/s/a',
+        'https://mp.weixin.qq.com:444/s/a',
+        'file:///private/article',
+      ]) {
+        await expectLater(
+          bridge.captureWebArticle(unsafe),
+          throwsFormatException,
+        );
+      }
+      expect(calls, hasLength(1));
+      reply = {'url': source, 'html': '<div id="js_content">正文</div>'};
+      expect((await bridge.captureWebArticle(source))!.html, contains('正文'));
+      reply = {'url': 'https://evil.example', 'html': '正文'};
+      await expectLater(
+        bridge.captureWebArticle(source),
+        throwsFormatException,
+      );
+      reply = {'url': source, 'html': 3};
+      await expectLater(
+        bridge.captureWebArticle(source),
+        throwsFormatException,
+      );
+      reply = {'url': source, 'html': '文' * (2 * 1024 * 1024)};
+      await expectLater(
+        bridge.captureWebArticle(source),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test('article identity ignores tracking but rejects other articles', () {
+    expect(
+      WebArticleCapture.isSameArticle(
+        'https://mp.weixin.qq.com/s/token?scene=1',
+        'https://mp.weixin.qq.com/s/token?scene=2#part',
+      ),
+      true,
+    );
+    expect(
+      WebArticleCapture.isSameArticle(
+        'https://mp.weixin.qq.com/s?__biz=account&mid=2&idx=1&scene=1',
+        'https://mp.weixin.qq.com/s?mid=2&__biz=account&scene=2',
+      ),
+      true,
+    );
+    expect(
+      WebArticleCapture.isSameArticle(
+        'https://mp.weixin.qq.com/s?__biz=account&mid=2&idx=1',
+        'https://mp.weixin.qq.com/s?__biz=account&mid=2&idx=2',
+      ),
+      false,
+    );
+    expect(
+      WebArticleCapture.isSameArticle(
+        'https://mp.weixin.qq.com/s/token',
+        'https://mp.weixin.qq.com/mp/verify',
+      ),
+      false,
+    );
+  });
+
   test('reads pending shares and acknowledges by id', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

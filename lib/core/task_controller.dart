@@ -128,9 +128,19 @@ extension TaskController on AppController {
           'research',
         }.contains(job.type)) {
       error = '任务版本或类型不受支持，请重新提交';
+    } else if (job.checkpoint['sourceReplaced'] == true) {
+      error = '正文已补全，请从资料页重新提交';
     } else if (job.checkpoint['configuration'] != _configurationSignature()) {
       error = '服务配置已变化，请手动重试';
-    } else if (job.checkpoint['inputIds'] case final List ids) {
+    } else if (job.checkpoint['contentVersion'] case final int version) {
+      final item = data.items.where((i) => i.id == job.entityId).firstOrNull;
+      if (item == null ||
+          item.contentVersion != version ||
+          item.bodyOrigin != job.checkpoint['bodyOrigin']) {
+        error = '正文已更新，请从资料页重新提交';
+      }
+    }
+    if (job.checkpoint['inputIds'] case final List ids) {
       if (!_reusable(ids.whereType<String>().toList())) error = '任务来源已失效，请重新提交';
     }
     if (error == null) return true;
@@ -367,7 +377,8 @@ extension TaskController on AppController {
   }
 
   Future<void> retryImages(String itemId) async {
-    _requireActive(_item(itemId));
+    final item = _item(itemId);
+    _requireActive(item);
     final previous = runtime.jobs.reversed
         .where(
           (job) =>
@@ -375,6 +386,11 @@ extension TaskController on AppController {
         )
         .firstOrNull;
     if (previous == null) throw StateError('缺少原始图片地址，请重新抓取正文');
+    if (previous.checkpoint['contentVersion'] != null &&
+        (previous.checkpoint['contentVersion'] != item.contentVersion ||
+            previous.checkpoint['bodyOrigin'] != item.bodyOrigin)) {
+      throw StateError('图片记录对应旧正文，请重新打开页面保存');
+    }
     await _startUserWork();
     _enqueue(
       'fetch',
@@ -383,6 +399,10 @@ extension TaskController on AppController {
         'articleFetched': true,
         'imageUrls': previous.checkpoint['imageUrls'],
         'savedImages': previous.checkpoint['savedImages'] ?? {},
+        if (previous.checkpoint['contentVersion'] != null) ...{
+          'contentVersion': previous.checkpoint['contentVersion'],
+          'bodyOrigin': previous.checkpoint['bodyOrigin'],
+        },
       },
     );
     _save();
