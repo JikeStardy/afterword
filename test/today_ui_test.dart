@@ -57,7 +57,9 @@ void main() {
     expect(find.text('尚待判断，决定精读、保留或跳过'), findsOneWidget);
     expect(find.text('分析正文'), findsOneWidget);
 
-    await tester.tap(find.text('少推荐'));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('少推荐类似'));
     await tester.pump();
     expect(controller.data.items.single.feedback, -1);
     await tester.pumpWidget(const SizedBox.shrink());

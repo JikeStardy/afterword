@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:readlater/core/models.dart';
+import 'package:readlater/services/knowledge_service.dart';
 
 void main() {
   test('restoring a snapshot retains original content, citations and tracking scope', () {
@@ -42,10 +43,16 @@ void main() {
       final settings = AppSettings(
         explicitInterests: ['适用条件'],
         inferredInterests: ['笔记工具'],
+        readingPreset: ReadingPreset.magazine,
       );
       final copy = AppSettings.fromJson(settings.toJson());
       expect(copy.explicitInterests, ['适用条件']);
       expect(copy.inferredInterests, ['笔记工具']);
+      expect(copy.readingPreset, ReadingPreset.magazine);
+      expect(
+        AppSettings.fromJson({'readingPreset': 'unknown'}).readingPreset,
+        ReadingPreset.editorial,
+      );
       expect(
         copy.toJson().keys.any((key) => key.toLowerCase().contains('key')),
         isFalse,
@@ -55,6 +62,19 @@ void main() {
 
   test('unknown backup schema is rejected instead of silently losing data', () {
     expect(() => AppData.fromJson({'version': 999}), throwsFormatException);
+  });
+
+  test('markdown export does not duplicate summary when brief is absent', () {
+    final markdown = KnowledgeService.exportItemMarkdown(
+      LibraryItem(
+        id: 'i1',
+        title: '文章',
+        kind: ItemKind.text,
+        analysis: Analysis(summary: '完整分析正文'),
+      ),
+    );
+
+    expect(RegExp('完整分析正文').allMatches(markdown), hasLength(1));
   });
 
   test(
@@ -122,11 +142,13 @@ void main() {
           ],
           analysis: Analysis(
             summary: '总结',
+            brief: '短导读',
             insights: ['旧 insight'],
             sourceIds: ['i1'],
             structuredInsights: [
               Insight(
                 id: 's1',
+                title: '适用条件改变',
                 finding: '新发现',
                 change: '改变了旧认识',
                 impact: '影响个人决策',
@@ -166,6 +188,21 @@ void main() {
           ],
           overviewStale: true,
           reviewAt: DateTime.utc(2026, 10),
+          presentation: ReadingPresentation(
+            brief: '主题导读',
+            sections: [ReadingSection(title: '共识', body: '正文 [i1]')],
+          ),
+        ),
+      ],
+      runs: [
+        ResearchRun(
+          id: 'r1',
+          goal: '研究',
+          report: '报告 [S1]',
+          presentation: ReadingPresentation(
+            brief: '研究导读',
+            sections: [ReadingSection(title: '结论', body: '证据 [S1]')],
+          ),
         ),
       ],
       todaySnapshots: [
@@ -195,8 +232,15 @@ void main() {
       ContentBlockKind.heading,
     );
     expect(copy.items.single.annotations.single.anchor.blockId, 'b2');
+    expect(copy.items.single.analysis!.brief, '短导读');
+    expect(
+      copy.items.single.analysis!.structuredInsights.single.title,
+      '适用条件改变',
+    );
     expect(copy.items.single.analysis!.structuredInsights.single.stale, isTrue);
     expect(copy.topics.single.selectedSourceIds, isEmpty);
+    expect(copy.topics.single.presentation!.sections.single.title, '共识');
+    expect(copy.runs.single.presentation!.brief, '研究导读');
     expect(copy.topics.single.contextEntries.single.confirmed, isTrue);
     expect(
       copy.todaySnapshots.single.deferredUntil['later'],

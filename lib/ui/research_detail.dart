@@ -9,6 +9,7 @@ import '../services/knowledge_service.dart';
 import 'common.dart';
 import 'developer_page.dart';
 import 'item_detail.dart';
+import 'reading_content.dart';
 import 'research_dialogs.dart';
 
 class TopicDetailPage extends StatelessWidget {
@@ -43,6 +44,7 @@ class TopicDetailPage extends StatelessWidget {
         ),
       );
     }
+    final sourceContext = _TopicReadingSourceContext.resolve(topic, controller);
     return AppFrame(
       title: topic.title,
       actions: [
@@ -69,8 +71,16 @@ class TopicDetailPage extends StatelessWidget {
         ),
       ],
       child: ListView(
+        padding: EdgeInsets.only(
+          top: ReadingLayout.of(context).sectionGap,
+          bottom: 40,
+        ),
         children: [
-          _OverviewCard(topic: topic, controller: controller),
+          _OverviewCard(
+            topic: topic,
+            controller: controller,
+            sourceContext: sourceContext,
+          ),
           _TopicContextCard(topic: topic, controller: controller),
           _TopicScopeCard(topic: topic, controller: controller),
           if (topic.error.isNotEmpty)
@@ -85,13 +95,14 @@ class TopicDetailPage extends StatelessWidget {
             ),
           _TopicRunCard(controller: controller, runs: _topicRuns(topic.id)),
           _TrackingCard(topic: topic, controller: controller),
-          SectionCard(
-            child: SourceList(
-              sources: topic.sourceIds,
-              labelForSource: controller.sourceLabel,
-              onSourceTap: (source) => _openSource(context, source),
+          if (!sourceContext.isAttachedRun)
+            SectionCard(
+              child: SourceList(
+                sources: topic.sourceIds,
+                labelForSource: controller.sourceLabel,
+                onSourceTap: (source) => _openSource(context, source),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -211,26 +222,12 @@ class _ResearchRunView extends StatelessWidget {
     return AppFrame(
       title: '研究记录',
       child: ListView(
+        padding: EdgeInsets.only(
+          top: ReadingLayout.of(context).sectionGap,
+          bottom: 40,
+        ),
         children: [
-          SectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(run.goal, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                StatusPill(label: run.status, positive: run.status == 'done'),
-                const SizedBox(height: 8),
-                Text('调用：${run.calls}/${run.callLimit}'),
-                Text('开始：${shortDate(run.startedAt)}'),
-                if (run.completedAt != null)
-                  Text('完成：${shortDate(run.completedAt)}'),
-                if (run.stale) ...[
-                  const SizedBox(height: 8),
-                  const StatusPill(label: '输入已变化，结果可能过时'),
-                ],
-              ],
-            ),
-          ),
+          _RunReportSection(run: run, controller: controller),
           if (run.error.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -241,13 +238,6 @@ class _ResearchRunView extends StatelessWidget {
                 label: const Text('查看任务日志'),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: SelectableText(
-              run.report.isEmpty ? run.error : run.report,
-              style: const TextStyle(fontSize: 17, height: 1.7),
-            ),
-          ),
           if (run.steps.isNotEmpty)
             SectionCard(
               child: Column(
@@ -267,19 +257,33 @@ class _ResearchRunView extends StatelessWidget {
 }
 
 class _OverviewCard extends StatelessWidget {
-  const _OverviewCard({required this.topic, required this.controller});
+  const _OverviewCard({
+    required this.topic,
+    required this.controller,
+    required this.sourceContext,
+  });
 
   final Topic topic;
   final AppController controller;
+  final _TopicReadingSourceContext sourceContext;
 
   @override
   Widget build(BuildContext context) {
-    return SectionCard(
+    final layout = ReadingLayout.of(context);
+    final topicJson = topic.toJson();
+    final presentation = topicJson['presentation'];
+    final brief = briefFromPresentation(presentation);
+    final sections = sectionsFromPresentation(presentation);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: layout.pagePadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(topic.question, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 10),
+          Text(
+            topic.question,
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          SizedBox(height: layout.rowPadding),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -297,24 +301,31 @@ class _OverviewCard extends StatelessWidget {
                 const StatusPill(label: '结论需更新'),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            topic.overview.isEmpty
-                ? '暂无综述，更新后会在这里沉淀当前认识。'
-                : readerCitationText(
-                    topic.overview,
-                    topic.sourceIds,
-                    labelForSource: controller.sourceLabel,
-                  ),
-            style: const TextStyle(fontSize: 17, height: 1.7),
+          SizedBox(height: layout.rowPadding),
+          ReadingContent(
+            brief: brief,
+            sections: sections,
+            fallback: topic.overview,
+            sources: sourceContext.citationIds,
+            labelForSource: sourceContext.labelForCitation,
+            emptyText: '暂无综述，更新后会在这里沉淀当前认识。',
+            legacyLabel: sections.isEmpty && brief.isEmpty ? null : '完整综述',
+            initiallyExpandFallback: sections.isEmpty && brief.isEmpty,
           ),
+          if (sourceContext.run != null) ...[
+            SizedBox(height: layout.sectionGap),
+            _RunSourceContextList(
+              run: sourceContext.run!,
+              controller: controller,
+            ),
+          ],
           if (topic.reason.isNotEmpty) ...[
-            const Divider(),
+            SizedBox(height: layout.sectionGap),
             Text('触发原因：${topic.reason}'),
           ],
           if (topic.toJson()['reviewAt'] is String)
             Text('复查：${topic.toJson()['reviewAt']}'),
-          const SizedBox(height: 8),
+          SizedBox(height: layout.rowPadding),
           Wrap(
             spacing: 8,
             children: [
@@ -336,6 +347,193 @@ class _OverviewCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _TopicReadingSourceContext {
+  const _TopicReadingSourceContext({
+    required this.citationIds,
+    required this.labelForCitation,
+    this.run,
+  });
+
+  final List<String> citationIds;
+  final String Function(String id) labelForCitation;
+  final ResearchRun? run;
+  bool get isAttachedRun => run != null;
+
+  static _TopicReadingSourceContext resolve(
+    Topic topic,
+    AppController controller,
+  ) {
+    final runs = topic.sourceIds
+        .map(
+          (id) => controller.data.runs
+              .where((candidate) => candidate.id == id)
+              .firstOrNull,
+        )
+        .nonNulls
+        .toList(growable: false);
+    if (topic.sourceIds.length != 1 || runs.length != 1) {
+      return _TopicReadingSourceContext(
+        citationIds: topic.sourceIds,
+        labelForCitation: controller.sourceLabel,
+      );
+    }
+    final run = runs.single;
+    final runSourceIds = run.sources.map((source) => source.id).toList();
+    return _TopicReadingSourceContext(
+      citationIds: [...runSourceIds, run.id],
+      labelForCitation: (id) {
+        final source = run.sources
+            .where((candidate) => candidate.id == id)
+            .firstOrNull;
+        if (source != null) return source.title;
+        if (id == run.id) return '研究记录：${run.goal}';
+        return controller.sourceLabel(id);
+      },
+      run: run,
+    );
+  }
+}
+
+class _RunSourceContextList extends StatelessWidget {
+  const _RunSourceContextList({required this.run, required this.controller});
+
+  final ResearchRun run;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    if (run.sources.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('本次研究来源', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const CircleAvatar(radius: 13, child: Text('1')),
+            title: Text('研究记录：${run.goal}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    ResearchRunPage(controller: controller, runId: run.id),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('本次研究来源', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        for (final entry in run.sources.indexed)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: CircleAvatar(
+              radius: 13,
+              child: Text(
+                '${entry.$1 + 1}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            title: Text(entry.$2.title),
+            subtitle: Text(entry.$2.url),
+            trailing: const Icon(Icons.open_in_new),
+            onTap: () => runUiAction(
+              context,
+              () => controller.native.openUrl(entry.$2.url),
+            ),
+          ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: CircleAvatar(
+            radius: 13,
+            child: Text(
+              '${run.sources.length + 1}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          title: Text('研究记录：${run.goal}'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  ResearchRunPage(controller: controller, runId: run.id),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RunReportSection extends StatelessWidget {
+  const _RunReportSection({required this.run, required this.controller});
+
+  final ResearchRun run;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
+    final runJson = run.toJson();
+    final presentation = runJson['presentation'];
+    final brief = briefFromPresentation(presentation);
+    final sections = sectionsFromPresentation(presentation);
+    final sourceIds = run.sources.map((source) => source.id).toList();
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: layout.pagePadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(run.goal, style: Theme.of(context).textTheme.headlineSmall),
+          SizedBox(height: layout.rowPadding),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              StatusPill(label: run.status, positive: run.status == 'done'),
+              Text('调用：${run.calls}/${run.callLimit}'),
+              Text('开始：${shortDate(run.startedAt)}'),
+              if (run.completedAt != null)
+                Text('完成：${shortDate(run.completedAt)}'),
+              if (run.stale) const StatusPill(label: '输入已变化，结果可能过时'),
+              if (run.requestPending) const StatusPill(label: '等待确认'),
+            ],
+          ),
+          if (run.error.isNotEmpty) ...[
+            SizedBox(height: layout.rowPadding),
+            Text(
+              run.error,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          SizedBox(height: layout.sectionGap),
+          ReadingContent(
+            brief: brief,
+            sections: sections,
+            fallback: run.report.isEmpty ? run.error : run.report,
+            sources: sourceIds,
+            labelForSource: (source) => _runSourceLabel(run, source),
+            emptyText: '暂无研究报告。',
+            legacyLabel: sections.isEmpty && brief.isEmpty ? null : '完整报告',
+            initiallyExpandFallback: sections.isEmpty && brief.isEmpty,
+          ),
+          SizedBox(height: layout.sectionGap),
+        ],
+      ),
+    );
+  }
+
+  String _runSourceLabel(ResearchRun run, String id) {
+    final source = run.sources.where((source) => source.id == id).firstOrNull;
+    if (source != null) return source.title;
+    return controller.sourceLabel(id);
   }
 }
 

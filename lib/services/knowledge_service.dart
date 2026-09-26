@@ -135,6 +135,58 @@ class KnowledgeService {
         .toList(growable: false);
   }
 
+  static ReadingPresentation? parseReadingPresentation(Object? raw) {
+    if (raw is! Map) return null;
+    final value = Map<String, dynamic>.from(raw);
+    final brief = value['brief'];
+    final sections = value['sections'];
+    if (brief is! String || sections is! List) return null;
+    final parsedSections = <ReadingSection>[];
+    for (final rawSection in sections) {
+      if (rawSection is! Map) return null;
+      final section = Map<String, dynamic>.from(rawSection);
+      final title = section['title'];
+      final body = section['body'];
+      if (title is! String || body is! String) return null;
+      if (title.trim().isNotEmpty || body.trim().isNotEmpty) {
+        parsedSections.add(ReadingSection(title: title, body: body));
+      }
+    }
+    if (!parsedSections.any((section) => section.body.trim().isNotEmpty)) {
+      return null;
+    }
+    final presentation = ReadingPresentation(
+      brief: brief,
+      sections: parsedSections,
+    );
+    return presentation.isEmpty ? null : presentation;
+  }
+
+  static String rawReadingPresentationText(Object? raw) {
+    if (raw is! Map) return '';
+    final value = Map<String, dynamic>.from(raw);
+    final buffer = StringBuffer();
+    void add(Object? text) {
+      if (text is String && text.trim().isNotEmpty) {
+        buffer
+          ..writeln(text.trim())
+          ..writeln();
+      }
+    }
+
+    add(value['brief']);
+    final sections = value['sections'];
+    if (sections is List) {
+      for (final rawSection in sections) {
+        if (rawSection is! Map) continue;
+        final section = Map<String, dynamic>.from(rawSection);
+        add(section['title']);
+        add(section['body']);
+      }
+    }
+    return buffer.toString().trimRight();
+  }
+
   static void validateStructuredInsights(
     Object? rawInsights,
     Map<String, LibraryItem> sources,
@@ -232,11 +284,28 @@ class KnowledgeService {
       buffer
         ..writeln('## Insight')
         ..writeln()
-        ..writeln(analysis.summary.trim())
+        ..writeln(
+          analysis.brief.trim().isEmpty
+              ? analysis.summary.trim()
+              : analysis.brief.trim(),
+        )
         ..writeln();
-      for (final insight in structuredInsights(analysis)) {
+      if (analysis.brief.trim().isNotEmpty &&
+          analysis.summary.trim().isNotEmpty) {
         buffer
-          ..writeln('### ${insight['finding'] ?? '发现'}')
+          ..writeln('### 完整分析')
+          ..writeln()
+          ..writeln(analysis.summary.trim())
+          ..writeln();
+      }
+      for (final insight in structuredInsights(analysis)) {
+        final heading = (insight['title'] as String? ?? '').trim().isEmpty
+            ? (insight['finding'] ?? '发现').toString()
+            : insight['title'].toString();
+        buffer
+          ..writeln('### $heading')
+          ..writeln()
+          ..writeln('${insight['finding'] ?? '未说明'}')
           ..writeln()
           ..writeln('- 变化：${insight['change'] ?? '未说明'}')
           ..writeln('- 个人影响：${insight['impact'] ?? '未说明'}')
@@ -288,7 +357,26 @@ class KnowledgeService {
       }
       buffer.writeln();
     }
-    if (topic.overview.trim().isNotEmpty) {
+    final presentation = topic.presentation;
+    if (presentation != null && !presentation.isEmpty) {
+      buffer
+        ..writeln('## 综述')
+        ..writeln()
+        ..writeln(presentation.brief.trim())
+        ..writeln();
+      for (final section in presentation.sections) {
+        if (section.title.trim().isNotEmpty) {
+          buffer
+            ..writeln('### ${section.title.trim()}')
+            ..writeln();
+        }
+        if (section.body.trim().isNotEmpty) {
+          buffer
+            ..writeln(section.body.trim())
+            ..writeln();
+        }
+      }
+    } else if (topic.overview.trim().isNotEmpty) {
       buffer
         ..writeln('## 综述')
         ..writeln()

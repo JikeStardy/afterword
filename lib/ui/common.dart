@@ -27,7 +27,15 @@ class AppFrame extends StatelessWidget {
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: actions,
       ),
-      body: SafeArea(child: child),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: child,
+          ),
+        ),
+      ),
       floatingActionButton: floatingActionButton,
     );
   }
@@ -84,9 +92,13 @@ class SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: EdgeInsets.symmetric(
+        horizontal: ReadingLayout.of(context).pagePadding,
+        vertical: 8,
+      ),
       child: Padding(
-        padding: padding ?? const EdgeInsets.all(16),
+        padding:
+            padding ?? EdgeInsets.all(ReadingLayout.of(context).rowPadding),
         child: child,
       ),
     );
@@ -318,7 +330,91 @@ Future<void> runUiAction(
   }
 }
 
-ThemeData readlaterTheme() {
+/// Shared typography and spacing; presets never alter reading order or actions.
+@immutable
+class ReadingLayout extends ThemeExtension<ReadingLayout> {
+  const ReadingLayout(this.preset);
+  final ReadingPreset preset;
+  static ReadingLayout of(BuildContext context) =>
+      Theme.of(context).extension<ReadingLayout>() ??
+      const ReadingLayout(ReadingPreset.editorial);
+  double get pagePadding => switch (preset) {
+    ReadingPreset.editorial => 20,
+    ReadingPreset.compact => 16,
+    ReadingPreset.magazine => 24,
+  };
+  double get sectionGap => switch (preset) {
+    ReadingPreset.editorial => 28,
+    ReadingPreset.compact => 20,
+    ReadingPreset.magazine => 36,
+  };
+  double get rowPadding => switch (preset) {
+    ReadingPreset.editorial => 16,
+    ReadingPreset.compact => 10,
+    ReadingPreset.magazine => 20,
+  };
+  double get titleSize => switch (preset) {
+    ReadingPreset.editorial => 26,
+    ReadingPreset.compact => 24,
+    ReadingPreset.magazine => 30,
+  };
+  double get sectionTitleSize => switch (preset) {
+    ReadingPreset.editorial => 20,
+    ReadingPreset.compact => 18,
+    ReadingPreset.magazine => 24,
+  };
+  double get bodyHeight => preset == ReadingPreset.compact ? 1.6 : 1.7;
+  @override
+  ReadingLayout copyWith({ReadingPreset? preset}) =>
+      ReadingLayout(preset ?? this.preset);
+  @override
+  ReadingLayout lerp(covariant ReadingLayout? other, double t) =>
+      other == null || t < .5 ? this : other;
+}
+
+class ReadingHeading extends StatelessWidget {
+  const ReadingHeading(this.text, {super.key, this.fontScale = 1});
+  final String text;
+  final double fontScale;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
+    final magazine = layout.preset == ReadingPreset.magazine;
+    return Semantics(
+      header: true,
+      child: Container(
+        width: double.infinity,
+        padding: magazine ? const EdgeInsets.all(12) : EdgeInsets.zero,
+        decoration: magazine
+            ? BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                border: Border(
+                  left: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 3,
+                  ),
+                ),
+              )
+            : null,
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.titleSmall
+              ?.copyWith(fontSize: layout.sectionTitleSize * fontScale),
+        ),
+      ),
+    );
+  }
+}
+
+String readingPresetLabel(ReadingPreset preset) => switch (preset) {
+  ReadingPreset.editorial => '阅读刊物',
+  ReadingPreset.compact => '紧凑研究工具',
+  ReadingPreset.magazine => '数字杂志',
+};
+
+ThemeData readlaterTheme([ReadingPreset preset = ReadingPreset.editorial]) {
+  final layout = ReadingLayout(preset);
   const green = Color(0xff476b4f);
   const warm = Color(0xfffaf8f3);
   const ink = Color(0xff202823);
@@ -334,26 +430,50 @@ ThemeData readlaterTheme() {
   final base = ThemeData(useMaterial3: true, colorScheme: scheme);
   return base.copyWith(
     scaffoldBackgroundColor: warm,
+    extensions: [layout],
     textTheme: base.textTheme.copyWith(
-      headlineSmall: const TextStyle(
-        fontSize: 24,
+      headlineSmall: TextStyle(
+        fontSize: layout.titleSize,
+        height: 1.35,
         fontWeight: FontWeight.w600,
         color: ink,
       ),
-      titleLarge: const TextStyle(
-        fontSize: 24,
+      titleLarge: TextStyle(
+        fontSize: layout.titleSize,
+        height: 1.35,
         fontWeight: FontWeight.w600,
         color: ink,
       ),
       titleMedium: const TextStyle(
         fontSize: 17,
+        height: 1.45,
         fontWeight: FontWeight.w600,
         color: ink,
       ),
-      bodyMedium: const TextStyle(fontSize: 14, height: 1.5, color: ink),
+      titleSmall: TextStyle(
+        fontSize: layout.sectionTitleSize,
+        height: 1.4,
+        fontWeight: FontWeight.w600,
+        color: ink,
+      ),
+      bodyLarge: TextStyle(fontSize: 17, height: layout.bodyHeight, color: ink),
+      bodyMedium: const TextStyle(fontSize: 14, height: 1.6, color: ink),
+      bodySmall: const TextStyle(
+        fontSize: 12,
+        height: 1.5,
+        color: Color(0xff646c63),
+      ),
+      labelLarge: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       centerTitle: false,
+      titleSpacing: layout.pagePadding,
+      titleTextStyle: TextStyle(
+        fontSize: layout.titleSize,
+        height: 1.3,
+        fontWeight: FontWeight.w600,
+        color: ink,
+      ),
       backgroundColor: warm,
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
@@ -364,7 +484,9 @@ ThemeData readlaterTheme() {
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      color: Colors.white,
+      color: preset == ReadingPreset.magazine
+          ? const Color(0xffedf2e8)
+          : Colors.white,
       shape: shape.copyWith(side: const BorderSide(color: Color(0xffe2e5dc))),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -382,6 +504,22 @@ ThemeData readlaterTheme() {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
     ),
+    chipTheme: ChipThemeData(
+      shape: shape,
+      side: const BorderSide(color: Color(0xff858e82)),
+      labelStyle: const TextStyle(fontSize: 13, color: ink),
+      selectedColor: scheme.primaryContainer,
+    ),
+    tabBarTheme: TabBarThemeData(
+      labelColor: green,
+      unselectedLabelColor: scheme.onSurfaceVariant,
+      unselectedLabelStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
+      labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      dividerColor: scheme.outlineVariant,
+    ),
     navigationBarTheme: const NavigationBarThemeData(
       backgroundColor: warm,
       indicatorColor: Color(0xffedf2e8),
@@ -397,6 +535,14 @@ ThemeData readlaterTheme() {
       helperMaxLines: 4,
       errorMaxLines: 4,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xff858e82)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: green, width: 2),
+      ),
     ),
   );
 }

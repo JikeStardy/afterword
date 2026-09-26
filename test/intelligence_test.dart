@@ -119,6 +119,80 @@ void main() {
     expect(prompt, contains('structuredInsights'));
   });
 
+  test(
+    'analysis accepts brief and short insight titles with citation checks',
+    () async {
+      final service = IntelligenceService(
+        client: MockClient(
+          (_) async => completion({
+            'brief': '短导读说明关键结论 [a]',
+            'summary': '结构化认识 [a]',
+            'structuredInsights': [
+              {
+                'id': 's1',
+                'title': '适用条件改变 [a]',
+                'finding': '发现',
+                'change': '改变',
+                'impact': '影响',
+                'evidence': [
+                  {'sourceId': 'a', 'unresolved': true, 'quote': '正文'},
+                ],
+              },
+            ],
+            'sourceIds': ['a'],
+          }),
+        ),
+      );
+
+      final result = await service.analyze(
+        AppSettings(textModel: 'm'),
+        'key',
+        LibraryItem(id: 'a', title: '文章', kind: ItemKind.text, body: '正文'),
+        [],
+      );
+
+      expect(result.brief, contains('短导读'));
+      expect(result.structuredInsights.single.title, contains('适用条件'));
+    },
+  );
+
+  test(
+    'analysis rejects fabricated citations in new brief and titles',
+    () async {
+      final service = IntelligenceService(
+        client: MockClient(
+          (_) async => completion({
+            'brief': '短导读 [missing]',
+            'summary': '认识',
+            'structuredInsights': [
+              {
+                'id': 's1',
+                'title': '标题 [a]',
+                'finding': '发现',
+                'change': '改变',
+                'impact': '影响',
+                'evidence': [
+                  {'sourceId': 'a', 'unresolved': true, 'quote': '正文'},
+                ],
+              },
+            ],
+            'sourceIds': ['a'],
+          }),
+        ),
+      );
+
+      await expectLater(
+        service.analyze(
+          AppSettings(textModel: 'm'),
+          'key',
+          LibraryItem(id: 'a', title: '文章', kind: ItemKind.text, body: '正文'),
+          [],
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
   test('analysis rejects fabricated structured evidence anchors', () async {
     final service = IntelligenceService(
       client: MockClient(
@@ -707,6 +781,115 @@ void main() {
     expect(payload['contexts'], hasLength(1));
     expect(payload['contexts'].single['text'], '用户确认判断');
   });
+  test(
+    'topic synthesis derives compatible overview from valid presentation',
+    () async {
+      final service = IntelligenceService(
+        client: MockClient(
+          (_) async => completion({
+            'overview': '旧综述 [a]',
+            'presentation': {
+              'brief': '主题导读 [a]',
+              'sections': [
+                {'title': '共识', 'body': '连续正文 [a]'},
+              ],
+            },
+            'sourceIds': ['a'],
+          }),
+        ),
+      );
+
+      final result = await service.synthesize(
+        AppSettings(textModel: 'm'),
+        'key',
+        Topic(id: 't', title: '主题', question: '问题'),
+        [LibraryItem(id: 'a', title: 'a', kind: ItemKind.text, body: '正文')],
+      );
+
+      expect(result['overview'], contains('主题导读 [a]'));
+      expect(result['overview'], contains('连续正文 [a]'));
+      expect(result['presentation'], isA<Map>());
+    },
+  );
+  test('topic synthesis falls back to valid legacy overview when presentation is malformed', () async {
+    final service = IntelligenceService(
+      client: MockClient(
+        (_) async => completion({
+          'overview': '旧综述 [a]',
+          'presentation': {
+            'brief': '主题导读 [a]',
+            'sections': [
+              {'title': '共识'},
+            ],
+          },
+          'sourceIds': ['a'],
+        }),
+      ),
+    );
+
+    final result = await service.synthesize(
+      AppSettings(textModel: 'm'),
+      'key',
+      Topic(id: 't', title: '主题', question: '问题'),
+      [LibraryItem(id: 'a', title: 'a', kind: ItemKind.text, body: '正文')],
+    );
+
+    expect(result['overview'], '旧综述 [a]');
+    expect(result.containsKey('presentation'), isFalse);
+  });
+  test('topic synthesis keeps full overview when presentation has no substantive section body', () async {
+    final service = IntelligenceService(
+      client: MockClient(
+        (_) async => completion({
+          'overview': '完整旧综述第一段 [a]\n\n完整旧综述第二段 [a]',
+          'presentation': {
+            'brief': '只有短导读 [a]',
+            'sections': [
+              {'title': '空段落', 'body': '   '},
+            ],
+          },
+          'sourceIds': ['a'],
+        }),
+      ),
+    );
+
+    final result = await service.synthesize(
+      AppSettings(textModel: 'm'),
+      'key',
+      Topic(id: 't', title: '主题', question: '问题'),
+      [LibraryItem(id: 'a', title: 'a', kind: ItemKind.text, body: '正文')],
+    );
+
+    expect(result['overview'], contains('完整旧综述第二段 [a]'));
+    expect(result['overview'], isNot('只有短导读 [a]'));
+    expect(result.containsKey('presentation'), isFalse);
+  });
+  test('topic synthesis rejects invalid citations even when presentation falls back', () async {
+    final service = IntelligenceService(
+      client: MockClient(
+        (_) async => completion({
+          'overview': '完整旧综述 [a]',
+          'presentation': {
+            'brief': '坏引用 [missing]',
+            'sections': [
+              {'title': '空段落', 'body': '   '},
+            ],
+          },
+          'sourceIds': ['a'],
+        }),
+      ),
+    );
+
+    await expectLater(
+      service.synthesize(
+        AppSettings(textModel: 'm'),
+        'key',
+        Topic(id: 't', title: '主题', question: '问题'),
+        [LibraryItem(id: 'a', title: 'a', kind: ItemKind.text, body: '正文')],
+      ),
+      throwsFormatException,
+    );
+  });
   test('external research prompt carries provided local context', () async {
     String? modelPrompt;
     final service = IntelligenceService(
@@ -745,6 +928,145 @@ void main() {
     );
 
     expect(modelPrompt, contains('用户确认背景'));
+  });
+  test('external research derives report from valid presentation', () async {
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        if (request.url.path == '/search') {
+          return http.Response(
+            jsonEncode({
+              'results': [
+                {
+                  'title': 'source',
+                  'url': 'https://example.com/a',
+                  'content': 'evidence',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return completion({
+          'report': 'legacy [S1]',
+          'presentation': {
+            'brief': '研究导读 [S1]',
+            'sections': [
+              {'title': '结论', 'body': '连续报告 [S1]'},
+            ],
+          },
+          'nextQuery': '',
+          'meaningful': true,
+        });
+      }),
+    );
+    final run = ResearchRun(id: 'r', goal: 'question', callLimit: 2);
+
+    await service.research(
+      AppSettings(textModel: 'm'),
+      'key',
+      'search',
+      run,
+      authorized: () => true,
+      onProgress: () async {},
+    );
+
+    expect(run.status, 'complete');
+    expect(run.report, contains('研究导读 [S1]'));
+    expect(run.presentation!.sections.single.body, contains('连续报告'));
+  });
+  test(
+    'external research rejects fabricated citations in presentation',
+    () async {
+      final service = IntelligenceService(
+        client: MockClient((request) async {
+          if (request.url.path == '/search') {
+            return http.Response(
+              jsonEncode({
+                'results': [
+                  {
+                    'title': 'source',
+                    'url': 'https://example.com/a',
+                    'content': 'evidence',
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          return completion({
+            'report': 'legacy [S1]',
+            'presentation': {
+              'brief': '研究导读 [S2]',
+              'sections': [
+                {'title': '结论', 'body': '连续报告 [S1]'},
+              ],
+            },
+            'nextQuery': '',
+            'meaningful': true,
+          });
+        }),
+      );
+      final run = ResearchRun(id: 'r', goal: 'question', callLimit: 2);
+
+      await service.research(
+        AppSettings(textModel: 'm'),
+        'key',
+        'search',
+        run,
+        authorized: () => true,
+        onProgress: () async {},
+      );
+
+      expect(run.status, 'failed');
+      expect(run.report, isEmpty);
+      expect(run.presentation, isNull);
+    },
+  );
+  test('external research keeps full report when presentation has no substantive section body', () async {
+    final service = IntelligenceService(
+      client: MockClient((request) async {
+        if (request.url.path == '/search') {
+          return http.Response(
+            jsonEncode({
+              'results': [
+                {
+                  'title': 'source',
+                  'url': 'https://example.com/a',
+                  'content': 'evidence',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return completion({
+          'report': '完整报告第一段 [S1]\n\n完整报告第二段 [S1]',
+          'presentation': {
+            'brief': '只有研究导读 [S1]',
+            'sections': [
+              {'title': '空段落', 'body': ''},
+            ],
+          },
+          'nextQuery': '',
+          'meaningful': true,
+        });
+      }),
+    );
+    final run = ResearchRun(id: 'r', goal: 'question', callLimit: 2);
+
+    await service.research(
+      AppSettings(textModel: 'm'),
+      'key',
+      'search',
+      run,
+      authorized: () => true,
+      onProgress: () async {},
+    );
+
+    expect(run.status, 'complete');
+    expect(run.report, contains('完整报告第二段 [S1]'));
+    expect(run.report, isNot('只有研究导读 [S1]'));
+    expect(run.presentation, isNull);
   });
   test('external report with a fabricated nonstandard citation is not marked complete', () async {
     final service = IntelligenceService(

@@ -14,6 +14,8 @@ class ResearchPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
+    final runs = data.runs.reversed.toList();
     return AppFrame(
       title: '研究',
       actions: [
@@ -40,41 +42,56 @@ class ResearchPage extends StatelessWidget {
               ),
             )
           : ListView(
+              padding: EdgeInsets.only(bottom: layout.sectionGap),
               children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Text('主题'),
-                ),
-                for (final topic in data.topics)
-                  _TopicCard(
-                    topic: topic,
+                _ResearchSectionHeader(title: '主题', count: data.topics.length),
+                for (final indexed in data.topics.indexed) ...[
+                  _TopicRow(
+                    topic: indexed.$2,
                     onOpen: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => TopicDetailPage(
                           controller: controller,
-                          topicId: topic.id,
+                          topicId: indexed.$2.id,
                         ),
                       ),
                     ),
                   ),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 18, 16, 4),
-                  child: Text('研究记录'),
-                ),
-                if (data.runs.isEmpty)
-                  const SectionCard(child: Text('暂无外部研究记录')),
-                for (final run in data.runs.reversed)
-                  _RunCard(
-                    run: run,
+                  if (indexed.$1 != data.topics.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: layout.pagePadding,
+                      endIndent: layout.pagePadding,
+                    ),
+                ],
+                SizedBox(height: layout.sectionGap / 2),
+                _ResearchSectionHeader(title: '研究活动', count: runs.length),
+                if (runs.isEmpty)
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: layout.pagePadding,
+                    ),
+                    child: const Text('暂无外部研究记录'),
+                  ),
+                for (final indexed in runs.indexed) ...[
+                  _RunRow(
+                    run: indexed.$2,
                     onOpen: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => ResearchRunPage(
                           controller: controller,
-                          runId: run.id,
+                          runId: indexed.$2.id,
                         ),
                       ),
                     ),
                   ),
+                  if (indexed.$1 != runs.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: layout.pagePadding,
+                      endIndent: layout.pagePadding,
+                    ),
+                ],
               ],
             ),
     );
@@ -132,48 +149,210 @@ class ResearchPage extends StatelessWidget {
   }
 }
 
-class _TopicCard extends StatelessWidget {
-  const _TopicCard({required this.topic, required this.onOpen});
+class _ResearchSectionHeader extends StatelessWidget {
+  const _ResearchSectionHeader({required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        layout.pagePadding,
+        layout.sectionGap / 2,
+        layout.pagePadding,
+        6,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+          ),
+          Text('$count 项', style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopicRow extends StatelessWidget {
+  const _TopicRow({required this.topic, required this.onOpen});
 
   final Topic topic;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return SectionCard(
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
+    final layout = ReadingLayout.of(context);
+    final brief = _clean(
+      topic.overview.isEmpty ? topic.question : topic.overview,
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         onTap: onOpen,
-        title: Text(topic.title),
-        subtitle: Text(
-          topic.overview.isEmpty ? topic.question : topic.overview,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Icon(
-          topic.tracking ? Icons.notifications_active : Icons.chevron_right,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            layout.pagePadding,
+            layout.rowPadding,
+            layout.pagePadding,
+            layout.rowPadding,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                topic.tracking
+                    ? Icons.notifications_active
+                    : Icons.travel_explore_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      topic.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (brief.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(brief, maxLines: 3, overflow: TextOverflow.ellipsis),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        StatusPill(
+                          label: topic.tracking
+                              ? '跟踪中'
+                              : _topicStatus(topic.status),
+                          positive: topic.tracking,
+                        ),
+                        Text(
+                          '${topic.sourceIds.length} 个来源',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (topic.overviewStale)
+                          const Text('综述待更新', style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _RunCard extends StatelessWidget {
-  const _RunCard({required this.run, required this.onOpen});
+class _RunRow extends StatelessWidget {
+  const _RunRow({required this.run, required this.onOpen});
 
   final ResearchRun run;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return SectionCard(
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
+    final layout = ReadingLayout.of(context);
+    final brief = _runBrief(run);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         onTap: onOpen,
-        title: Text(run.goal, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text('${run.status} · ${run.calls}/${run.callLimit} 次调用'),
-        trailing: const Icon(Icons.chevron_right),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            layout.pagePadding,
+            layout.rowPadding,
+            layout.pagePadding,
+            layout.rowPadding,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                run.status == 'completed'
+                    ? Icons.check_circle_outline
+                    : Icons.science_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      run.goal,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (brief.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(brief, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        StatusPill(
+                          label: _runStatus(run.status),
+                          positive: run.status == 'completed',
+                        ),
+                        Text(
+                          '${run.calls}/${run.callLimit} 次调用',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (run.sources.isNotEmpty)
+                          Text(
+                            '${run.sources.length} 个外部来源',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
+
+String _topicStatus(String value) => switch (value) {
+  'idle' => '未跟踪',
+  'running' => '研究中',
+  'failed' => '有异常',
+  _ => value.isEmpty ? '未跟踪' : value,
+};
+
+String _runStatus(String value) => switch (value) {
+  'completed' => '已完成',
+  'running' => '运行中',
+  'failed' => '有异常',
+  'pending' => '待确认',
+  _ => value.isEmpty ? '运行中' : value,
+};
+
+String _runBrief(ResearchRun run) {
+  if (run.error.isNotEmpty) return run.error;
+  if (run.report.isNotEmpty) return _clean(run.report);
+  if (run.pendingStage.isNotEmpty) return run.pendingStage;
+  if (run.steps.isNotEmpty) return run.steps.last;
+  return run.status;
+}
+
+String _clean(String value) => value.replaceAll(RegExp(r'\s+'), ' ').trim();

@@ -138,6 +138,16 @@ class NotificationNative extends NativeBridge {
   }
 }
 
+class FailingSaveStore extends LocalStore {
+  FailingSaveStore(super.root);
+  bool failSave = false;
+  @override
+  void saveWithRuntime(AppData data, RuntimeState runtime) {
+    if (failSave) throw StateError('save failed');
+    super.saveWithRuntime(data, runtime);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory dir;
@@ -243,6 +253,39 @@ void main() {
     final reopened = LocalStore(dir.path);
     expect(reopened.load().items.single.notes, '关注适用条件');
     reopened.close();
+  });
+  test('reading preset saves independently from model settings', () async {
+    await controller.saveSettings(
+      AppSettings(
+        endpoint: 'https://trusted.example/v1',
+        textModel: 'configured-model',
+        explicitInterests: ['长期阅读'],
+      ),
+      apiKey: 'private-model',
+    );
+
+    await controller.setReadingPreset(ReadingPreset.compact);
+
+    final saved = controller.store.load().settings;
+    expect(saved.readingPreset, ReadingPreset.compact);
+    expect(saved.endpoint, 'https://trusted.example/v1');
+    expect(saved.textModel, 'configured-model');
+    expect(saved.explicitInterests, ['长期阅读']);
+    expect(controller.modelConfigured, isTrue);
+  });
+  test('reading preset rolls back in memory when persistence fails', () async {
+    controller.dispose();
+    final store = FailingSaveStore(dir.path);
+    controller = AppController(store: store, secrets: TestSecrets());
+    await controller.initialize();
+
+    store.failSave = true;
+    await expectLater(
+      controller.setReadingPreset(ReadingPreset.magazine),
+      throwsStateError,
+    );
+
+    expect(controller.data.settings.readingPreset, ReadingPreset.editorial);
   });
   test(
     'invalid downloaded images are reported without losing saved article',

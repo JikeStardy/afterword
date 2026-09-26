@@ -55,6 +55,7 @@ void main() {
 
     await tester.pumpWidget(_settingsPage(controller));
     await tester.pump();
+    await _reveal(tester, find.text('导出 ZIP'), 500);
     await tester.tap(find.text('导出 ZIP'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
@@ -119,7 +120,7 @@ void main() {
     await tester.pump();
     expect(find.text('旧的分析要求'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('恢复'));
+    await _reveal(tester, find.text('恢复'), 500);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '恢复'));
     await tester.pumpAndSettle();
@@ -130,21 +131,37 @@ void main() {
     expect(picker.pickFileCalls, 1);
     expect(controller.restoreCalls, 1);
     expect(controller.restoreError, isNull);
+    await _reveal(tester, find.text('https://trusted.example/v1'), -500);
     expect(find.text('https://trusted.example/v1'), findsOneWidget);
     expect(find.text('trusted-text'), findsOneWidget);
     expect(find.text('trusted-vision'), findsOneWidget);
     expect(controller.data.settings.customInstructions, '恢复后的分析要求');
     expect(controller.data.settings.endpoint, 'https://trusted.example/v1');
-    await tester.drag(find.byType(ListView), const Offset(0, -520));
-    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('https://trusted-search.example'), 300);
     expect(find.text('https://trusted-search.example'), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -520));
-    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('恢复后的分析要求'), -400);
     expect(find.text('恢复后的分析要求'), findsOneWidget);
     expect(find.text('个人知识管理'), findsOneWidget);
     expect(find.text('渐进总结'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+}
+
+Future<void> _reveal(WidgetTester tester, Finder target, double delta) async {
+  final scrollable = find
+      .descendant(
+        of: find.byType(SettingsPage),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  await tester.scrollUntilVisible(
+    target,
+    delta,
+    scrollable: scrollable,
+    maxScrolls: 30,
+  );
+  await Scrollable.ensureVisible(tester.element(target), alignment: .5);
+  await tester.pumpAndSettle();
 }
 
 void _useLargeSurface(WidgetTester tester) {

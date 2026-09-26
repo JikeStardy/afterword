@@ -46,6 +46,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
     final trimmedQuery = _query.trim();
     final hits = trimmedQuery.isEmpty
         ? const <SearchHit>[]
@@ -135,9 +136,15 @@ class _LibraryPageState extends State<LibraryPage> {
         slivers: [
           SliverToBoxAdapter(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  padding: EdgeInsets.fromLTRB(
+                    layout.pagePadding,
+                    8,
+                    layout.pagePadding,
+                    4,
+                  ),
                   child: SearchBar(
                     controller: _search,
                     hintText: '搜索标题、正文、笔记',
@@ -156,27 +163,45 @@ class _LibraryPageState extends State<LibraryPage> {
                     onChanged: (value) => setState(() => _query = value),
                   ),
                 ),
-                _chips(
-                  ['使用中', '已归档', '回收站'],
-                  _scope,
-                  (v) => setState(() {
+                _chipGroup(
+                  context,
+                  label: '范围',
+                  labels: const ['使用中', '已归档', '回收站'],
+                  selected: _scope,
+                  onSelect: (v) => setState(() {
                     _scope = v;
                     _selected.clear();
                   }),
                 ),
-                _chips(
-                  ['全部', '未读', '已分析', '异常'],
-                  _filter,
-                  (v) => setState(() {
+                _chipGroup(
+                  context,
+                  label: '状态',
+                  labels: const ['全部', '未读', '已分析', '异常'],
+                  selected: _filter,
+                  onSelect: (v) => setState(() {
                     _filter = v;
                     _selected.clear();
                   }),
                 ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    layout.pagePadding,
+                    6,
+                    layout.pagePadding,
+                    10,
+                  ),
+                  child: Text(
+                    '当前 ${items.length} 条资料 · ${_sortLabel(trimmedQuery)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
                 if (_scope == '回收站')
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
+                    padding: EdgeInsets.fromLTRB(
+                      layout.pagePadding,
+                      0,
+                      layout.pagePadding,
+                      8,
                     ),
                     child: Text(
                       '删除后保留 ${widget.data.settings.trashRetentionDays} 天，到期永久移除。',
@@ -219,8 +244,11 @@ class _LibraryPageState extends State<LibraryPage> {
           if (items.isNotEmpty)
             SliverList.separated(
               itemCount: items.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+              separatorBuilder: (_, _) => Divider(
+                height: 1,
+                indent: layout.pagePadding,
+                endIndent: layout.pagePadding,
+              ),
               itemBuilder: (context, index) {
                 final item = items[index];
                 return _LibraryTile(
@@ -249,19 +277,34 @@ class _LibraryPageState extends State<LibraryPage> {
               },
             ),
           if (knowledgeHits.isNotEmpty) ...[
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 18, 16, 6),
-                child: Text('研究与主题命中'),
+                padding: EdgeInsets.fromLTRB(
+                  layout.pagePadding,
+                  layout.sectionGap / 2,
+                  layout.pagePadding,
+                  6,
+                ),
+                child: Text(
+                  '研究与主题命中',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
               ),
             ),
             SliverList.separated(
               itemCount: knowledgeHits.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+              separatorBuilder: (_, _) => Divider(
+                height: 1,
+                indent: layout.pagePadding,
+                endIndent: layout.pagePadding,
+              ),
               itemBuilder: (context, index) {
                 final hit = knowledgeHits[index];
                 return ListTile(
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: layout.pagePadding,
+                    vertical: 4,
+                  ),
                   leading: Icon(
                     hit.type == 'topic'
                         ? Icons.travel_explore_outlined
@@ -286,27 +329,42 @@ class _LibraryPageState extends State<LibraryPage> {
   void _toggle(String id) => setState(() {
     if (!_selected.add(id)) _selected.remove(id);
   });
-  Widget _chips(
-    List<String> labels,
-    String selected,
-    ValueChanged<String> onSelect,
-  ) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: Row(
-      children: [
-        for (final label in labels)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(label),
-              selected: label == selected,
-              onSelected: (_) => onSelect(label),
+  Widget _chipGroup(
+    BuildContext context, {
+    required String label,
+    required List<String> labels,
+    required String selected,
+    required ValueChanged<String> onSelect,
+  }) {
+    final layout = ReadingLayout.of(context);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: layout.pagePadding),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 42,
+            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final chipLabel in labels)
+                  ChoiceChip(
+                    label: Text(chipLabel),
+                    selected: chipLabel == selected,
+                    onSelected: (_) => onSelect(chipLabel),
+                  ),
+              ],
             ),
           ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
+
+  String _sortLabel(String query) => query.isEmpty ? '按加入时间排序' : '按相关度排序';
 
   Future<void> _importFile(BuildContext context) async {
     final file = await FilePicker.pickFile();
@@ -409,100 +467,117 @@ class _LibraryTile extends StatelessWidget {
   final AppController controller;
   final String? snippet;
   @override
-  Widget build(BuildContext context) => Material(
-    color: selected
-        ? Theme.of(context).colorScheme.primaryContainer
-        : Colors.transparent,
-    child: InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (selecting) Checkbox(value: selected, onChanged: (_) => onTap()),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    snippet?.isNotEmpty == true
-                        ? snippet!
-                        : item.analysis?.summary.isNotEmpty == true
-                        ? item.analysis!.summary
-                        : (item.body.isEmpty ? item.url : item.body),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget build(BuildContext context) {
+    final layout = ReadingLayout.of(context);
+    return Material(
+      color: selected
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            layout.pagePadding,
+            layout.rowPadding,
+            4,
+            layout.rowPadding,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (selecting)
+                Checkbox(value: selected, onChanged: (_) => onTap()),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        kindLabel(item.kind),
-                        style: Theme.of(context).textTheme.bodySmall,
+                    const SizedBox(height: 4),
+                    Text(
+                      snippet?.isNotEmpty == true
+                          ? snippet!
+                          : _libraryPreview(item),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                      StatusPill(
-                        label: _libraryStatusLabel(item),
-                        positive: item.analysis != null,
-                      ),
-                      PopupMenuButton<WorkState>(
-                        tooltip: '处理状态',
-                        onSelected: (value) =>
-                            controller.setWorkState(item.id, value),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: WorkState.pending,
-                            child: Text('待判断'),
-                          ),
-                          PopupMenuItem(
-                            value: WorkState.reading,
-                            child: Text('阅读中'),
-                          ),
-                          PopupMenuItem(
-                            value: WorkState.done,
-                            child: Text('已处理'),
-                          ),
-                          PopupMenuItem(
-                            value: WorkState.snoozed,
-                            child: Text('搁置到明天'),
-                          ),
-                        ],
-                        child: StatusPill(
-                          label: _workStateLabel(item.workState),
-                          positive: item.workState == WorkState.done,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          kindLabel(item.kind),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                      ),
-                      if (item.readCount == 0)
-                        const Text('未读', style: TextStyle(fontSize: 12)),
-                      Text(
-                        shortDate(item.createdAt).split(' ').first,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ],
+                        StatusPill(
+                          label: _libraryStatusLabel(item),
+                          positive: item.analysis != null,
+                        ),
+                        PopupMenuButton<WorkState>(
+                          tooltip: '处理状态',
+                          onSelected: (value) =>
+                              controller.setWorkState(item.id, value),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: WorkState.pending,
+                              child: Text('待判断'),
+                            ),
+                            PopupMenuItem(
+                              value: WorkState.reading,
+                              child: Text('阅读中'),
+                            ),
+                            PopupMenuItem(
+                              value: WorkState.done,
+                              child: Text('已处理'),
+                            ),
+                            PopupMenuItem(
+                              value: WorkState.snoozed,
+                              child: Text('搁置到明天'),
+                            ),
+                          ],
+                          child: StatusPill(
+                            label: _workStateLabel(item.workState),
+                            positive: item.workState == WorkState.done,
+                          ),
+                        ),
+                        if (item.readCount == 0)
+                          const Text('未读', style: TextStyle(fontSize: 12)),
+                        Text(
+                          shortDate(item.createdAt).split(' ').first,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            trailing,
-          ],
+              trailing,
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+String _libraryPreview(LibraryItem item) {
+  final brief = item.analysis?.brief.trim() ?? '';
+  if (brief.isNotEmpty) return brief;
+  final summary = item.analysis?.summary.trim() ?? '';
+  if (summary.isNotEmpty) return '摘录：$summary';
+  final body = item.body.trim();
+  if (body.isNotEmpty) return '摘录：$body';
+  return item.url;
 }
 
 String _workStateLabel(WorkState state) => switch (state) {
