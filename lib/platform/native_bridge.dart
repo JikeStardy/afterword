@@ -195,6 +195,31 @@ class NativeBridge {
     }
   }
 
+  Future<Map<String, Object?>> diagnosticEnvironment() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'diagnosticEnvironment',
+      );
+      return (result ?? const <Object?, Object?>{}).map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    } on MissingPluginException {
+      return _unknownDiagnosticEnvironment();
+    } on PlatformException catch (error) {
+      return {..._unknownDiagnosticEnvironment(), 'errorCode': error.code};
+    }
+  }
+
+  static Map<String, Object?> _unknownDiagnosticEnvironment() =>
+      const <String, Object?>{
+        'platform': 'unknown',
+        'appVersion': 'unknown',
+        'buildNumber': 'unknown',
+        'osVersion': 'unknown',
+        'networkType': 'unknown',
+        'vpnActive': 'unknown',
+      };
+
   Future<List<SharedInput>> pendingShares() async {
     try {
       final rawShares = await _channel.invokeMethod<List<Object?>>(

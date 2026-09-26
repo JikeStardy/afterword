@@ -305,20 +305,69 @@ class Analysis {
     'structuredInsights': structuredInsights.map((i) => i.toJson()).toList(),
     'createdAt': createdAt.toIso8601String(),
   };
-  factory Analysis.fromJson(Json j) => Analysis(
-    summary: j['summary'] as String? ?? '',
-    brief: j['brief'] as String? ?? '',
-    stale: j['stale'] as bool? ?? false,
-    inputItemIds: j['inputItemIds'] == null ? null : strings(j['inputItemIds']),
-    insights: strings(j['insights']),
-    connections: strings(j['connections']),
-    questions: strings(j['questions']),
-    sourceIds: strings(j['sourceIds']),
-    suggestedTopics: strings(j['suggestedTopics']),
-    structuredInsights: (j['structuredInsights'] as List? ?? [])
+  factory Analysis.fromJson(Json j, {bool migrateLegacyHighlights = true}) {
+    final structuredInsights = (j['structuredInsights'] as List? ?? [])
         .map((i) => Insight.fromJson(json(i)))
-        .toList(),
-    createdAt: date(j['createdAt']),
+        .toList();
+    return Analysis(
+      summary: j['summary'] as String? ?? '',
+      brief: j['brief'] as String? ?? '',
+      stale: j['stale'] as bool? ?? false,
+      inputItemIds: j['inputItemIds'] == null
+          ? null
+          : strings(j['inputItemIds']),
+      insights: strings(j['insights']),
+      connections: strings(j['connections']),
+      questions: strings(j['questions']),
+      sourceIds: strings(j['sourceIds']),
+      suggestedTopics: strings(j['suggestedTopics']),
+      structuredInsights:
+          structuredInsights.isNotEmpty || !migrateLegacyHighlights
+          ? structuredInsights
+          : _legacyHighlights(j['highlights']),
+      createdAt: date(j['createdAt']),
+    );
+  }
+}
+
+List<Insight> _legacyHighlights(dynamic value) {
+  final highlights = value is List ? value : const [];
+  return [
+    for (final (index, highlight) in highlights.indexed)
+      if (highlight is Map)
+        _legacyHighlight(index, Map<String, dynamic>.from(highlight)),
+  ];
+}
+
+Insight _legacyHighlight(int index, Json highlight) {
+  return Insight(
+    id: 'legacy-highlight-$index',
+    title: highlight['title'] as String? ?? '',
+    finding: highlight['explanation'] as String? ?? '',
+    evidence: _legacyEvidence(highlight['evidence']),
+  );
+}
+
+List<EvidenceAnchor> _legacyEvidence(dynamic value) {
+  final evidence = value is List ? value : const [];
+  return [
+    for (final item in evidence)
+      if (item is Map) _legacyEvidenceAnchor(Map<String, dynamic>.from(item)),
+  ];
+}
+
+EvidenceAnchor _legacyEvidenceAnchor(Json evidence) {
+  final sourceVersion = evidence['sourceVersion'] as int?;
+  final blockId = evidence['blockId'] as String? ?? '';
+  final unresolved = sourceVersion == null || blockId.isEmpty;
+  return EvidenceAnchor(
+    sourceId: evidence['sourceId'] as String? ?? '',
+    sourceVersion: sourceVersion,
+    blockId: blockId,
+    pdfPage: evidence['pdfPage'] as int? ?? evidence['page'] as int?,
+    quote: evidence['quote'] as String? ?? '',
+    note: unresolved ? '旧版观点摘录缺少来源版本或段落定位，需核对。' : '',
+    unresolved: unresolved,
   );
 }
 

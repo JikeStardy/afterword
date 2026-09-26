@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide DiagnosticLevel;
 
 import 'core/app_controller.dart';
+import 'core/diagnostics.dart';
 import 'platform/native_bridge.dart';
 import 'ui/app_shell.dart';
 import 'ui/common.dart';
@@ -16,10 +18,12 @@ Future<void> main() async {
     final controller = await AppController.open(
       digestOnly: runtime.mode == 'digestOnly',
     );
+    _installGlobalDiagnostics(controller);
     controller.bindNativeRuntime();
     runtime = await controller.native.runtimeContext();
     if (runtime.mode == 'interactive') await controller.activateInteractive();
     for (final event in runtime.recentEvents) {
+      controller.logRuntimeEvent(event, source: 'native.replay');
       if (event.kind == 'cancelAll' || event.kind == 'timeout') {
         await controller.pauseTasks(cancelled: event.kind == 'cancelAll');
       }
@@ -69,6 +73,7 @@ class _ReadlaterAppState extends State<ReadlaterApp>
   void dispose() {
     _resumeTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    widget.controller.diagnostics.flush();
     super.dispose();
   }
 
@@ -139,6 +144,7 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
       final controller = await AppController.open(
         recoveryBackup: Uint8List.fromList(bytes),
       );
+      _installGlobalDiagnostics(controller);
       controller.bindNativeRuntime();
       if (!mounted) {
         return;
@@ -204,4 +210,33 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
       ),
     );
   }
+}
+
+void _installGlobalDiagnostics(AppController controller) {
+  final previousFlutter = FlutterError.onError;
+  FlutterError.onError = (details) {
+    controller.diagnostics.log(
+      DiagnosticLevel.error,
+      'flutter',
+      'framework.exception',
+      error: details.exception,
+      stackTrace: details.stack,
+      data: {
+        'library': details.library,
+        'context': details.context?.toString(),
+      },
+    );
+    previousFlutter?.call(details);
+  };
+  final previousPlatform = PlatformDispatcher.instance.onError;
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    controller.diagnostics.log(
+      DiagnosticLevel.error,
+      'flutter',
+      'async.exception',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return previousPlatform?.call(error, stackTrace) ?? false;
+  };
 }

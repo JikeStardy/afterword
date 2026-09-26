@@ -20,6 +20,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.graphics.pdf.PdfRenderer
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -327,11 +329,36 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
         val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
         if (!prefs().getBoolean(PREF_DIGEST_ENABLED, true)) {
             scheduler.cancel(DIGEST_JOB_ID)
+            emitRuntimeEvent(
+                mapOf(
+                    "kind" to "digestSchedule",
+                    "message" to "每日汇总调度已取消：功能未启用。",
+                    "result" to "cancelled",
+                ),
+            )
             return
         }
         val hasPending = scheduler.allPendingJobs.any { job -> job.id == DIGEST_JOB_ID }
-        if (!replaceExisting && hasPending) return
-        if (replaceExisting) scheduler.cancel(DIGEST_JOB_ID)
+        if (!replaceExisting && hasPending) {
+            emitRuntimeEvent(
+                mapOf(
+                    "kind" to "digestSchedule",
+                    "message" to "每日汇总已有待执行调度。",
+                    "result" to "skipped",
+                ),
+            )
+            return
+        }
+        if (replaceExisting) {
+            scheduler.cancel(DIGEST_JOB_ID)
+            emitRuntimeEvent(
+                mapOf(
+                    "kind" to "digestSchedule",
+                    "message" to "每日汇总旧调度已取消，准备重新调度。",
+                    "result" to "replacing",
+                ),
+            )
+        }
         val hour = prefs().getInt(PREF_DIGEST_HOUR, 20)
         val minute = prefs().getInt(PREF_DIGEST_MINUTE, 0)
         val delay = delayUntilNextDigest(hour, minute)
@@ -342,13 +369,26 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
             .setMinimumLatency(delay)
             .setPersisted(true)
             .build()
-        scheduler.schedule(info)
+        val result = scheduler.schedule(info)
+        emitRuntimeEvent(
+            mapOf(
+                "kind" to "digestSchedule",
+                "message" to if (result == JobScheduler.RESULT_SUCCESS) {
+                    "每日汇总调度成功。"
+                } else {
+                    "每日汇总调度失败。"
+                },
+                "result" to if (result == JobScheduler.RESULT_SUCCESS) "success" else "failure",
+                "delayMs" to delay,
+            ),
+        )
     }
 
     private fun installChannel(nativeChannel: MethodChannel) {
         nativeChannel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "runtimeContext" -> result.success(runtimeContext())
+                "diagnosticEnvironment" -> result.success(diagnosticEnvironment())
                 "pendingShares" -> result.success(pendingShares())
                 "acknowledgeShare" -> acknowledgeShare(call, result)
                 "renderPdf" -> renderPdf(call, result)
@@ -439,6 +479,41 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
             dialog.disposeSilently()
             result.error("capture_unavailable", "微信公众号回退窗口无法打开。", null)
         }
+    }
+
+    private fun diagnosticEnvironment(): Map<String, Any?> {
+        val packageInfo = try {
+            app.packageManager.getPackageInfo(app.packageName, 0)
+        } catch (_: Exception) {
+            null
+        }
+        val connectivity = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val activeNetwork = connectivity?.activeNetwork
+        val capabilities = activeNetwork?.let { connectivity.getNetworkCapabilities(it) }
+        val networkType = when {
+            capabilities == null -> "unknown"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "mobile"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+            else -> "other"
+        }
+        val vpnActive = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo?.longVersionCode?.toString()
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo?.versionCode?.toString()
+        }
+        return mapOf(
+            "platform" to "android",
+            "appVersion" to (packageInfo?.versionName ?: "unknown"),
+            "buildNumber" to (versionCode ?: "unknown"),
+            "osVersion" to Build.VERSION.RELEASE.orEmpty().ifBlank { "unknown" },
+            "sdkInt" to Build.VERSION.SDK_INT,
+            "networkType" to networkType,
+            "vpnActive" to (vpnActive ?: "unknown"),
+        )
     }
 
     private fun runtimeContext(): Map<String, Any?> = synchronized(this) {

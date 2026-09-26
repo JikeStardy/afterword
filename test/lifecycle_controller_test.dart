@@ -49,6 +49,7 @@ class RecordingIntelligence extends IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     calls++;
     this.related = related;

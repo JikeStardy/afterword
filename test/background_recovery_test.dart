@@ -60,6 +60,7 @@ class SegmentedIntelligence extends IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     calls++;
     if (blockSecond && calls == 2) {

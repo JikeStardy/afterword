@@ -25,6 +25,7 @@ class BlockingAnalysis extends IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     calls++;
     if (!entered.isCompleted) entered.complete();

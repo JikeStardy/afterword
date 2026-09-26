@@ -22,6 +22,7 @@ class DelayedFixtureIntelligence extends IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     await Future<void>.delayed(const Duration(seconds: 15));
     return super.analyze(
@@ -30,6 +31,7 @@ class DelayedFixtureIntelligence extends IntelligenceService {
       item,
       related,
       imageDataUrls: imageDataUrls,
+      availableEvidence: availableEvidence,
     );
   }
 }

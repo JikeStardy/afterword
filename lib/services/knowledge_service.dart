@@ -189,8 +189,9 @@ class KnowledgeService {
 
   static void validateStructuredInsights(
     Object? rawInsights,
-    Map<String, LibraryItem> sources,
-  ) {
+    Map<String, LibraryItem> sources, {
+    List<EvidenceAnchor>? availableEvidence,
+  }) {
     if (rawInsights is! List) return;
     for (final raw in rawInsights) {
       if (raw is! Map) {
@@ -211,7 +212,27 @@ class KnowledgeService {
         if (rawAnchor is! Map) {
           throw const FormatException('模型返回了无效证据锚点');
         }
-        validateEvidenceAnchor(Map<String, dynamic>.from(rawAnchor), sources);
+        final anchor = Map<String, dynamic>.from(rawAnchor);
+        if (availableEvidence == null) {
+          validateEvidenceAnchor(anchor, sources);
+        } else {
+          final candidate = EvidenceAnchor.fromJson(anchor);
+          if (!sources.containsKey(candidate.sourceId) ||
+              !availableEvidence.any(
+                (proof) =>
+                    proof.sourceId == candidate.sourceId &&
+                    proof.sourceVersion == candidate.sourceVersion &&
+                    proof.blockId == candidate.blockId &&
+                    proof.pdfPage == candidate.pdfPage &&
+                    proof.start == candidate.start &&
+                    proof.end == candidate.end &&
+                    proof.unresolved == candidate.unresolved &&
+                    normalizeQuote(proof.quote) ==
+                        normalizeQuote(candidate.quote),
+              )) {
+            throw const FormatException('综合分析只能复用分段分析已收集的原文证据');
+          }
+        }
       }
     }
   }
@@ -257,10 +278,15 @@ class KnowledgeService {
       throw const FormatException('证据引用了过期正文版本');
     }
     final quote = (anchor['quote'] as String? ?? '').trim();
-    if (quote.isNotEmpty && !(block['text'] as String).contains(quote)) {
+    if (quote.isNotEmpty &&
+        !normalizeQuote(block['text'] as String)
+            .contains(normalizeQuote(quote))) {
       throw const FormatException('证据摘录与正文段落不一致');
     }
   }
+
+  static String normalizeQuote(String text) =>
+      text.replaceAll(RegExp(r'[\s\u00a0]+'), ' ').trim();
 
   static String exportItemMarkdown(
     LibraryItem item, {

@@ -1,7 +1,7 @@
 name: readlater
 description: Local-first personal research library with RSS and bounded AI agents.
 publish_to: none
-version: 0.3.0+3
+version: 0.3.1+4
 environment:
   sdk: ^3.13.4
 dependencies:
@@ -15,6 +15,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   sqlite3: ^3.6.0
   archive: ^4.3.0
+  crypto: 3.0.7
 dev_dependencies:
   flutter_test:
     sdk: flutter

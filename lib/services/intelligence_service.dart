@@ -224,11 +224,14 @@ class IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     DiagnosticScope.registerCredentials([key]);
     DiagnosticScope.ensureAllowed();
     final allowed = {item.id, ...related.map((r) => r.id)};
     final input = {
+      if (availableEvidence != null)
+        'availableEvidence': availableEvidence.map((e) => e.toJson()).toList(),
       'preferences': preferences(settings),
       'item': {
         ...KnowledgeService.itemPayload(item),
@@ -261,6 +264,7 @@ class IntelligenceService {
       '同时返回structuredInsights数组，每条包含title、finding、change、impact、unknowns、evidence；title写12到24个中文字符，不要截断原句伪装标题。'
       'evidence必须使用提供的sourceId、contentVersion和contentBlocks里的blockId；PDF可使用pdfPage。'
       '无法定位时设置unresolved:true并保留quote，不得编造段落或页码。'
+      '如果提供availableEvidence，当前content是中间分析而不是原文；evidence只能原样选用availableEvidence，不能增加或修改摘录、页码、段落、版本及核验状态。没有可用证据时structuredInsights留空，仍可在summary和insights总结。'
       'connections比较与已有资料、笔记和已确认背景的新增、重复、冲突；没有相关资料时明确说明。questions为可由用户确认的下一步研究建议。'
       'suggestedTopics最多3个兴趣方向，不能把阅读解释为立场认同。'
       'feedback表示用户明确的有用程度（-1无用、0未评价、1有用），优先于阅读及研究建议采纳等注意力信号；注意力不等于认同。'
@@ -271,8 +275,8 @@ class IntelligenceService {
     DiagnosticScope.ensureAllowed();
     KnowledgeService.validateStructuredInsights(result['structuredInsights'], {
       for (final source in [item, ...related]) source.id: source,
-    });
-    final analysis = Analysis.fromJson(result);
+    }, availableEvidence: availableEvidence);
+    final analysis = Analysis.fromJson(result, migrateLegacyHighlights: false);
     if (analysis.summary.trim().isEmpty) {
       throw const FormatException('模型未生成有效观点卡片');
     }

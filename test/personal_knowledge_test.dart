@@ -57,6 +57,7 @@ class SummaryEvidenceIntelligence extends IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     return Analysis(
       summary: 'SYNTHETIC_SUMMARY',

@@ -64,6 +64,7 @@ class CountingIntelligence extends IntelligenceService {
     LibraryItem item,
     List<LibraryItem> related, {
     List<String> imageDataUrls = const [],
+    List<EvidenceAnchor>? availableEvidence,
   }) async {
     analyses++;
     return Analysis(

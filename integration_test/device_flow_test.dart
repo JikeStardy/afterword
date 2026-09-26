@@ -184,9 +184,12 @@ void main() {
       expect(run.sources, isNotEmpty);
       expect(run.report, contains('[S1]'));
       expect(run.inputItemIds, contains(imageItem.id));
-      final runTask = controller.diagnostics.tasks.singleWhere(
+      final runTasks = controller.diagnostics.tasks.where(
         (task) => task.type == 'research' && task.entityId == run.id,
       );
+      // V3 records the queue wrapper separately from provider execution.
+      expect(runTasks.every((task) => task.status == 'succeeded'), isTrue);
+      final runTask = runTasks.singleWhere((task) => task.calls.isNotEmpty);
       expect(runTask.status, 'succeeded');
       expect(runTask.calls, isNotEmpty);
       expect(

@@ -1960,7 +1960,7 @@ class _EvidenceLine extends StatelessWidget {
     final location = anchor['unresolved'] == true
         ? '无法定位，保留摘录'
         : page is int
-        ? 'PDF 第 $page 页'
+        ? 'PDF 第 $page 页 · 图像转录，待核对'
         : '段落 ${anchor['blockId'] ?? '未知'}';
     final quote = anchor['quote'] as String? ?? '';
     return ListTile(
