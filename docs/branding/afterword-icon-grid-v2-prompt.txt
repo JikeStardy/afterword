@@ -1,0 +1,23 @@
+Use case: logo-brand.
+Create ONE premium app-icon concept COMPARISON BOARD containing exactly NINE DISTINCT designs arranged in a perfectly aligned 3 by 3 grid. This single board is the requested deliverable. Brand context: "有下文 / Afterword", an app where saved articles become understanding, connected ideas and ongoing research. The prior generic bookmark-with-a-folded-corner design was too ordinary. These nine new directions must have dramatically different silhouettes, personality and visual ideas, not nine tweaks to a bookmark.
+
+FORMAT:
+Square, high resolution, ideally 2400 by 2400. Fully opaque warm ivory #FAF8F3 background filling the canvas. Three equal columns and three equal rows with consistent generous gutters and outer margins. Each grid cell contains one identical-size muted forest green #476B4F rounded-square app tile with ONE bold warm-ivory symbol in its center. Symbols occupy approximately 60 percent of their tile, with optically consistent visual weight. Beneath each tile, OUTSIDE the green tile, place the corresponding small dark-green label exactly as supplied below. No title or subtitle. No other text.
+Graphic style: beautifully crafted contemporary brand identities, rich in silhouette, simple and witty, strong at tiny size. Crisp smooth edges. Strictly flat two-color graphics, no gradients or shadows, no texture, no 3D, no faux paper texture, no devices, no mockups. The entire green tile is opaque artwork, do not make backgrounds transparent.
+
+ROW 1:
+01 label "01 回流": An expressive abstract continuation mark. One thick open circular ribbon with an off-center inner opening; one end curls back and then extends gently outward. It suggests returning to an idea and taking it further. Asymmetrical and alive, not a loading spinner, infinity sign or power button.
+02 label "02 下文": A memorable custom Chinese typographic logo based on the single character 下. Three bold, beautifully balanced strokes, editorial and slightly playful; the downward vertical stroke ends with a gentle forward-curving terminal. Recognizable as 下, not a generic download arrow. No enclosing book or document.
+03 label "03 纸舟": A compact, adventurous paper-boat symbol. Broad simple hull with one high folded sail and a forward-reaching bow. Two or three bold planes and one generous negative-space fold. Calm curiosity, not a paper airplane, not an illustration with water.
+
+ROW 2:
+04 label "04 段落": A bespoke bold pilcrow paragraph mark ¶ with a full rounded bowl and short stout descending stems. Feel of a small independent publishing house. Give it distinctive optical proportions so it is a brand mark rather than a font screenshot.
+05 label "05 接话": Two compact quotation/conversation shapes that join into one diagonal conversational rhythm, a larger shape and a smaller response, connected by a clever negative-space notch. Suggest a thought receiving its next thought. Simple bold forms, no faces or text.
+06 label "06 跨页桥": Two broad book-page pillars joined by a single smooth arch, with a strong central doorway-shaped negative space. Reading opens a route to what follows. Architectural and literary, with three or fewer essential shapes, not a detailed open-book drawing.
+
+ROW 3:
+07 label "07 长尾狐": A charming, highly distilled fox silhouette with a large flowing tail that curls back around its compact body. Curious, intelligent and warm. Only bold silhouette plus one generous face cutout if necessary; no fur strokes, detailed face, eyes as tiny dots, legs clutter or illustration shading. Very different from the abstract marks.
+08 label "08 书脊印": A confident publisher's imprint made of three short, closely grouped book-spine shapes of varying heights sharing one thick baseline. The overall silhouette should feel like a compact editorial seal, not a statistics bar chart. One spine may lean slightly to give character.
+09 label "09 续章 a": A custom single-storey lowercase a logomark with a generous counter, sturdy warm serif-like proportions, and a right-bottom terminal continuing into a short free outward stroke. A distinctive letterform, no literal book outline or bookmark.
+
+CRITICAL: exactly 9 icons, one of each specified concept, equal-size green tiles, ordered left-to-right top-to-bottom as 01 through 09. Each label appears once directly below its own tile. Every design must be visibly and conceptually different. Output the full finished 3x3 board only.
