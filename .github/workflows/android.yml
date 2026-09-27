@@ -1,0 +1,137 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-ci:
+    name: Check and build Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FLUTTER_VERSION: 3.47.5
+      FLUTTER_REVISION: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1
+      FLUTTER_ARCHIVE_SHA256: 2132e990f236f8d22e7c6314b29a191a95b10d7cbcfec9b4e2e303d996652cbb
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js for diagnostic receiver tests
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install pinned Flutter SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/flutter.tar.xz"
+          curl --fail --location --retry 3 \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
+            --output "$archive"
+          printf '%s  %s\n' "$FLUTTER_ARCHIVE_SHA256" "$archive" | sha256sum --check
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          test "$(git -C "$RUNNER_TEMP/flutter" rev-parse HEAD)" = "$FLUTTER_REVISION"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare Android SDK and build resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+          export GRADLE_USER_HOME="$RUNNER_TEMP/gradle"
+          echo "GRADLE_USER_HOME=$GRADLE_USER_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$GRADLE_USER_HOME"
+          cat > "$GRADLE_USER_HOME/gradle.properties" <<'PROPERTIES'
+          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m
+          org.gradle.workers.max=2
+          org.gradle.daemon=false
+          PROPERTIES
+          printf 'sdk.dir=%s\nflutter.sdk=%s/flutter\n' "$ANDROID_HOME" "$RUNNER_TEMP" > android/local.properties
+          flutter --version
+          java -version
+
+      - name: Restore trusted main signing key
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        id: signing
+        shell: bash
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey > /dev/null
+            echo 'mode=fixed-personal-test' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=temporary-test' >> "$GITHUB_OUTPUT"
+            echo '::warning::No fixed signing secret: this APK may not upgrade an existing installation.'
+          fi
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Run project checks and build
+        run: bash tool/check.sh android
+
+      - name: Test diagnostic receiver
+        run: node --test tool/diagnostics_receiver.test.mjs
+
+      - name: Package APK and verification metadata
+        shell: bash
+        env:
+          SIGNING_MODE: ${{ steps.signing.outputs.mode || 'temporary-test' }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version: *//p' pubspec.yaml)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?$ ]]
+          mkdir -p dist/ci-build
+          apk="Afterword-${version}-android-arm64.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/ci-build/$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
+            "dist/ci-build/$apk" > dist/ci-build/SIGNATURE.txt
+          (
+            cd dist/ci-build
+            sha256sum "$apk" > SHA256SUMS.txt
+          )
+          printf 'Version: %s\nCommit: %s\nSigning: %s\nFlutter: %s\n' \
+            "$version" "$GITHUB_SHA" "$SIGNING_MODE" "$FLUTTER_VERSION" > dist/ci-build/BUILD_INFO.txt
+          {
+            echo '### Android build'
+            echo "- Version: $version"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Signing: $SIGNING_MODE"
+            echo '- Download the APK and its checksums from the artifact below.'
+            echo '- Temporary test signatures may not match previous installations; back up data before changing installations.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: afterword-android-arm64-${{ github.sha }}
+          path: dist/ci-build/
+          if-no-files-found: error
+          retention-days: 14

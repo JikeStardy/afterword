@@ -1,6 +1,6 @@
 # 开发与 Git 规范
 
-本项目采用本地 Git、个人与 AI 协作。`main` 保留可用版本，日常开发在短期分支完成。当前没有远端和云端 CI。
+本项目采用 GitHub、个人与 AI 协作，远端为 `https://github.com/JikeStardy/afterword.git`。`main` 保留可用版本，日常开发在短期分支完成。GitHub Actions 对 main 推送、面向 main 的 PR 和手动运行执行完整检查与 Android APK 构建，详见 [GitHub 构建](docs/GITHUB_BUILD.md)。
 
 ## 环境准备
 
@@ -30,6 +30,7 @@ bash tool/check.sh full
 - 提交采用 `type(scope): 说明`，scope 可省略，说明可用中文。常用 type 为 `feat`、`fix`、`docs`、`test`、`refactor`、`style`、`chore`、`build`。示例：`fix(library): 阻止已归档资料参与分析`。
 - 一个提交解释一个完整意图；纯格式调整与功能修改分开。提交前检查 `git diff --cached`，明确列出文件暂存，避免盲目暂存运行数据。
 - AI 可以自动提交当前功能分支；**合并 main 必须由用户明确发起**。完成后保留分支并报告提交和验证结果。
+- 用户授权推送后，显式推送目标分支；不批量推送所有分支或强制覆盖远端。main 合并前运行 full 并通过独立审查，推送后检查对应提交的 Actions 结果。APK 使用 Actions artifacts 分发，不提交到 Git。
 - 合并前通过 `full` 检查及独立审查。用户授权后优先快进合并；存在分叉时先说明冲突和整合方式，不自行重写历史。
 - 默认不 amend、rebase、reset 已存在的提交，不删除分支或移动标签；此类操作需要明确授权。不得通过绕过钩子或屏蔽失败完成交付。
 

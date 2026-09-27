@@ -10,7 +10,13 @@ Save it. See where it leads.
 
 ## 开发协作
 
-开发流程、分支与提交、测试和发布规范见 [CONTRIBUTING.md](CONTRIBUTING.md)；AI 协作规则见 [AGENTS.md](AGENTS.md)。首次获取仓库运行 `flutter pub get --enforce-lockfile`、`bash tool/setup-dev.sh`，随后用 `bash tool/check.sh full` 验证。仅本地 Git，AI 可提交功能分支，合并 `main` 需用户明确发起。
+开发流程、分支与提交、测试和发布规范见 [CONTRIBUTING.md](CONTRIBUTING.md)；AI 协作规则见 [AGENTS.md](AGENTS.md)。首次获取仓库运行 `flutter pub get --enforce-lockfile`、`bash tool/setup-dev.sh`，随后用 `bash tool/check.sh full` 验证。代码托管于 [JikeStardy/afterword](https://github.com/JikeStardy/afterword)，主分支为 `main`；AI 可提交功能分支，合并和推送需用户授权。
+
+## GitHub 自动构建
+
+推送 `main`、向 `main` 提交 PR 或手动运行 `Android` workflow，会执行完整检查并构建 Android arm64 APK。进入 [Actions](https://github.com/JikeStardy/afterword/actions/workflows/android.yml)，打开成功运行，在 Artifacts 下载 `afterword-android-arm64-<提交号>`；附件包含 APK、SHA-256 校验文件、签名和构建信息，保留 14 天。
+
+主分支可从仓库 Secret 恢复现有个人测试签名；PR 不读取签名密钥。没有固定签名时产物明确标为临时测试包，可能不能覆盖旧版本。配置和验收说明见 [GitHub 构建](docs/GITHUB_BUILD.md)。此流程不自动创建 Release 或发布到应用商店。
 
 ## 开发环境
 
