@@ -228,22 +228,22 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
             listOf(
                 NotificationChannel(
                     CHANNEL_RUNNING,
-                    "Readlater 运行进度",
+                    "有下文运行进度",
                     NotificationManager.IMPORTANCE_LOW,
                 ),
                 NotificationChannel(
                     CHANNEL_RESULTS,
-                    "Readlater 任务结果",
+                    "有下文任务结果",
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ),
                 NotificationChannel(
                     CHANNEL_DIGEST,
-                    "Readlater 每日汇总",
+                    "有下文每日汇总",
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ),
                 NotificationChannel(
                     CHANNEL_RESEARCH,
-                    "Readlater 研究提醒",
+                    "有下文研究提醒",
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ),
             ),
@@ -253,7 +253,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
     fun runningNotification(): Notification {
         return buildNotification(
             channelId = CHANNEL_RUNNING,
-            title = runningProgress.title.ifBlank { "Readlater 正在处理" },
+            title = runningProgress.title.ifBlank { "有下文正在处理" },
             body = runningProgress.body(),
             entityType = null,
             entityId = null,
@@ -568,7 +568,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
         publishNotification(
             "legacy",
             CHANNEL_RESULTS,
-            title.ifBlank { "Readlater" },
+            title.ifBlank { "有下文" },
             body,
             null,
             null,
@@ -679,7 +679,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
         }
         builder
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(title.ifBlank { "Readlater" })
+            .setContentTitle(title.ifBlank { "有下文" })
             .setContentText(body)
             .setContentIntent(contentIntent)
             .setOngoing(ongoing)

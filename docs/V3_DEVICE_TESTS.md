@@ -1,4 +1,4 @@
-# Readlater V3 Android Device Checks
+# 有下文 · Afterword V3 Android Device Checks
 
 These checks cover the native foreground-service path that cannot be proven by
 unit tests alone: submit, background/home, lock screen, resume, and notification
@@ -97,9 +97,9 @@ sent.
 
 ## Share Cancel Flow
 
-1. Share a large PDF or image batch into Readlater.
+1. Share a large PDF or image batch into 有下文 · Afterword.
 2. While the native copy foreground notification is active, tap Cancel.
-3. Reopen Readlater.
+3. Reopen 有下文 · Afterword.
 
 Expected result:
 

@@ -487,7 +487,7 @@ Future<void> _export(
   String? taskId,
 }) => runUiAction(context, () async {
   final saved = await FilePicker.saveFile(
-    fileName: 'readlater-logs-${DateTime.now().millisecondsSinceEpoch}.json',
+    fileName: 'afterword-logs-${DateTime.now().millisecondsSinceEpoch}.json',
     bytes: logs.exportLogs(taskId: taskId),
     mimeType: 'application/json',
     dialogTitle: '导出日志',

@@ -480,7 +480,7 @@ class _SettingsPageState extends State<SettingsPage> {
         fileName: _backupFileName(),
         bytes: bytes,
         mimeType: 'application/zip',
-        dialogTitle: '导出 Readlater 备份',
+        dialogTitle: '导出有下文备份',
       );
       if (!context.mounted) {
         return;
@@ -539,7 +539,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _backupFileName() {
     final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
-    return 'readlater-backup-${now.year}${two(now.month)}${two(now.day)}-'
+    return 'afterword-backup-${now.year}${two(now.month)}${two(now.day)}-'
         '${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
   }
 

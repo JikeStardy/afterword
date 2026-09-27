@@ -418,7 +418,7 @@ class _DiagnosticEventsPageState extends State<DiagnosticEventsPage> {
                                 : () => _action(() async {
                                     final saved = await FilePicker.saveFile(
                                       fileName:
-                                          'readlater-diagnostics-${bundle.reportId}.zip',
+                                          'afterword-diagnostics-${bundle.reportId}.zip',
                                       bytes: bundle.bytes,
                                       mimeType: 'application/zip',
                                       dialogTitle: '导出诊断包',

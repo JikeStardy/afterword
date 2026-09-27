@@ -60,7 +60,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
 
-    expect(picker.savedFileName, startsWith('readlater-backup-'));
+    expect(picker.savedFileName, startsWith('afterword-backup-'));
     expect(picker.savedFileName, endsWith('.zip'));
     expect(picker.savedMimeType, 'application/zip');
     expect(find.text('备份已导出'), findsOneWidget);

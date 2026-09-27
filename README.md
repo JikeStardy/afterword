@@ -1,6 +1,12 @@
-# Readlater
+# 有下文 · Afterword
 
-Android 个人研究资料库：收藏网页、文字、图片和 PDF，在本地保存原始资料，按个人关注点生成观点卡片与主题综述，再按授权开展外部研究。V3 加入今日推荐、个人背景、结构化阅读与可恢复的 Android 后台分析，保留归档、回收站和来源链约束。
+让每一次收藏，都有下文。
+
+Save it. See where it leads.
+
+有下文（英文名 Afterword）是 Android 个人研究资料库：收藏网页、文字、图片和 PDF，在本地保存原始资料，按个人关注点生成观点卡片与主题综述，再按授权开展外部研究。V3 加入今日推荐、个人背景、结构化阅读与可恢复的 Android 后台分析，保留归档、回收站和来源链约束。
+
+项目原名 Readlater；内部 package、applicationId 与本地数据路径继续保留 `readlater` 标识，以支持已安装版本和既有数据兼容。更名范围与本次验证见 [更名记录](docs/AFTERWORD_RENAME.md)。
 
 ## 开发协作
 

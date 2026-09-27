@@ -1,4 +1,4 @@
-# Readlater 剩余需求与执行清单
+# 有下文 · Afterword 剩余需求与执行清单
 
 更新日期：2026-09-26。初始核对基线：`feat/personal-insights-background` / `fdf4655`，V3 `0.3.0+3`。RL-01 最新实现见 `feat/wechat-capture-recovery` 与下方执行记录。
 

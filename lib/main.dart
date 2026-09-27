@@ -107,7 +107,7 @@ class _ReadlaterAppState extends State<ReadlaterApp>
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) => MaterialApp(
-        title: 'Readlater',
+        title: '有下文 · Afterword',
         debugShowCheckedModeBanner: false,
         theme: readlaterTheme(widget.controller.data.settings.readingPreset),
         themeAnimationDuration: Duration.zero,
@@ -164,6 +164,7 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: '有下文 · Afterword',
       debugShowCheckedModeBanner: false,
       theme: readlaterTheme(),
       home: Scaffold(
@@ -175,7 +176,7 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
               children: [
                 const Icon(Icons.error_outline, size: 42),
                 const SizedBox(height: 16),
-                const Text('Readlater 启动失败'),
+                const Text('有下文启动失败'),
                 const SizedBox(height: 8),
                 Text(
                   '${widget.error}',
