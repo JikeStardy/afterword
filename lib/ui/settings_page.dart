@@ -7,6 +7,7 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'common.dart';
 import 'developer_page.dart';
+import 'afterword_art.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.controller, required this.data});
@@ -74,7 +75,7 @@ class _SettingsPageState extends State<SettingsPage> {
       actions: [
         IconButton(
           tooltip: '开发者日志',
-          icon: const Icon(Icons.receipt_long_outlined),
+          icon: const AfterwordIcon(Icons.receipt_long_outlined),
           onPressed: () => openDiagnostics(context, widget.controller),
         ),
       ],
@@ -107,12 +108,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule),
+                  leading: const AfterwordIcon(Icons.schedule),
                   title: const Text('汇总时间'),
                   subtitle: Text(
                     '${_two(widget.data.settings.digestHour)}:${_two(widget.data.settings.digestMinute)}',
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const AfterwordIcon(Icons.chevron_right),
                   onTap: () => _pickDigestTime(context),
                 ),
                 SwitchListTile(
@@ -279,17 +280,17 @@ class _SettingsPageState extends State<SettingsPage> {
           SectionCard(
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.code_outlined),
+              leading: const AfterwordIcon(Icons.code_outlined),
               title: const Text('开发者'),
               subtitle: const Text('任务日志、交互调试与导出'),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const AfterwordIcon(Icons.chevron_right),
               onTap: () => openDiagnostics(context, widget.controller),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             child: FilledButton.icon(
-              icon: const Icon(Icons.save_outlined),
+              icon: const AfterwordIcon(Icons.save_outlined),
               label: const Text('保存设置'),
               onPressed: () => _save(context),
             ),
@@ -337,7 +338,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ReadingPreset.compact => '紧凑列表 · 清晰状态 · 正文不缩小',
                     ReadingPreset.magazine => '醒目标题 · 章节色面 · 丰富留白',
                   }),
-                  trailing: Icon(
+                  trailing: AfterwordIcon(
                     selected == preset
                         ? Icons.check_circle
                         : Icons.circle_outlined,
@@ -373,7 +374,7 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined),
+              const AfterwordIcon(Icons.inventory_2_outlined),
               const SizedBox(width: 12),
               const Expanded(child: Text('本地备份与恢复')),
               OutlinedButton(
@@ -385,7 +386,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
           Row(
             children: [
-              const Icon(Icons.restore_outlined),
+              const AfterwordIcon(Icons.restore_outlined),
               const SizedBox(width: 12),
               const Expanded(child: Text('从 ZIP 恢复资料库')),
               FilledButton(
@@ -572,7 +573,7 @@ class _NotificationPermissionRow extends StatelessWidget {
       children: [
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(
+          leading: AfterwordIcon(
             allowed == true
                 ? Icons.notifications_active_outlined
                 : Icons.notifications_off_outlined,

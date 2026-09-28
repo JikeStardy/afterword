@@ -1,8 +1,8 @@
 # 有下文 · 长尾狐设计包
 
-基于九宫格 **07 长尾狐**，按“功能识别优先、狐狸用于品牌与状态”的方向制作。交付可编辑 SVG 与可播放样册，本轮没有接入 App。
+基于九宫格 **07 长尾狐**，按“功能识别优先、狐狸用于品牌与状态”的方向制作。设计包交付可编辑 SVG 与可播放样册；App 接入进展见 [../APP_INTEGRATION.md](../APP_INTEGRATION.md)。
 
-包含 **85 个功能图标、5 个导航选中变体、17 个场景、4 份品牌文件、8 种动效**。当前 App 的 82 个 Material 图标名称全部有映射。
+包含 **85 个功能图标、5 个导航选中变体、17 个场景、4 份品牌文件、8 种动效**。接入分支扩展为 98 个 Material 别名映射，覆盖当前 Flutter UI 使用的 Material 图标。
 
 **[打开离线样册](index.html)**：双击 `index.html` 即可使用；文件需与相邻 JS / CSS 一同保留。无需安装、联网或启动服务器。可筛选图标、切换尺寸与颜色、下载单个 SVG，并播放、暂停、重播动效。
 
@@ -32,7 +32,7 @@ node docs/branding/fox-kit/build-assets.cjs
 
 修改 `icons.js` / `scenes.js` 后执行此命令，会更新独立 SVG、目录和覆盖表。脚本读取仓库 `lib/` 核对实际 Material 引用，覆盖缺失应先补齐再交付。打包后的独立目录可以直接预览；重新核对 App 覆盖则需在完整仓库中运行。
 
-静态 SVG 不内嵌动画。可复用的动效时序在 `scenes.js`，运动关键帧在 `preview.js`；后续接入 Flutter 时按相同事件、幅度、时长转换。App 内的实际尺寸、屏幕阅读器标签、系统减少动态偏好与平台启动图标资源留待接入阶段验证。
+静态 SVG 不内嵌动画。可复用的动效时序在 `scenes.js`，运动关键帧在 `preview.js`；Flutter/Android 接入使用原生 Canvas 矢量和平台 XML/PNG 资源生成，不新增运行依赖。App 内接入、平台图标生成和验证状态见 [../APP_INTEGRATION.md](../APP_INTEGRATION.md)。
 
 ## 验证
 

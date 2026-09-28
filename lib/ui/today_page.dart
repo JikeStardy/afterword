@@ -5,6 +5,7 @@ import '../core/models.dart';
 import 'common.dart';
 import 'item_detail.dart';
 import 'research_detail.dart';
+import 'afterword_art.dart';
 
 class TodayPage extends StatelessWidget {
   const TodayPage({super.key, required this.controller, required this.data});
@@ -23,7 +24,7 @@ class TodayPage extends StatelessWidget {
       actions: [
         IconButton(
           tooltip: '补充今日推荐',
-          icon: const Icon(Icons.refresh),
+          icon: const AfterwordIcon(Icons.refresh),
           onPressed: () => runUiAction(
             context,
             () => controller.refreshToday(refill: true),
@@ -36,11 +37,12 @@ class TodayPage extends StatelessWidget {
         children: [
           if (entries.isEmpty)
             EmptyState(
+              scene: 'today-clear',
               icon: Icons.today_outlined,
               title: '今天没有新的推荐',
               message: '已处理、失效或延后的内容不会反复出现。',
               action: OutlinedButton.icon(
-                icon: const Icon(Icons.refresh),
+                icon: const AfterwordIcon(Icons.refresh),
                 label: const Text('手动补充'),
                 onPressed: () => runUiAction(
                   context,
@@ -129,7 +131,7 @@ class _TodayRow extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(
+                  AfterwordIcon(
                     _icon(),
                     size: 18,
                     color: Theme.of(context).colorScheme.primary,
@@ -182,7 +184,7 @@ class _TodayRow extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       visualDensity: VisualDensity.compact,
                     ),
-                    icon: const Icon(Icons.done),
+                    icon: const AfterwordIcon(Icons.done),
                     label: const Text('已处理'),
                     onPressed: () => runUiAction(
                       context,
@@ -192,6 +194,7 @@ class _TodayRow extends StatelessWidget {
                   ),
                   PopupMenuButton<String>(
                     tooltip: '更多操作',
+                    icon: const AfterwordIcon(Icons.more_horiz),
                     onSelected: (value) => _handleMenu(context, value, item),
                     itemBuilder: (_) => [
                       const PopupMenuItem(value: 'open', child: Text('打开')),
@@ -427,7 +430,7 @@ class _JobCard extends StatelessWidget {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(_jobIcon()),
+            leading: AfterwordIcon(_jobAfterwordIcon()),
             title: Text(
               _jobTitle(),
               maxLines: 2,
@@ -450,7 +453,7 @@ class _JobCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
-                icon: const Icon(Icons.close),
+                icon: const AfterwordIcon(Icons.close),
                 label: const Text('取消'),
                 onPressed: () => runUiAction(
                   context,
@@ -460,7 +463,7 @@ class _JobCard extends StatelessWidget {
               ),
               if (job.status == 'paused')
                 FilledButton.icon(
-                  icon: const Icon(Icons.replay),
+                  icon: const AfterwordIcon(Icons.replay),
                   label: const Text('重试'),
                   onPressed: () => runUiAction(
                     context,
@@ -475,7 +478,7 @@ class _JobCard extends StatelessWidget {
     );
   }
 
-  IconData _jobIcon() => switch (job.type) {
+  IconData _jobAfterwordIcon() => switch (job.type) {
     'research' => Icons.science_outlined,
     'synthesis' => Icons.travel_explore_outlined,
     'fetch' => Icons.public,

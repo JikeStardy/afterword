@@ -8,6 +8,7 @@ import 'common.dart';
 import 'item_detail.dart';
 import 'item_actions.dart';
 import 'research_detail.dart';
+import 'afterword_art.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key, required this.controller, required this.data});
@@ -81,7 +82,7 @@ class _LibraryPageState extends State<LibraryPage> {
           ? [
               IconButton(
                 tooltip: '全选当前结果',
-                icon: const Icon(Icons.select_all),
+                icon: const AfterwordIcon(Icons.select_all),
                 onPressed: () =>
                     setState(() => _selected.addAll(items.map((e) => e.id))),
               ),
@@ -94,7 +95,7 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
               IconButton(
                 tooltip: '退出多选',
-                icon: const Icon(Icons.close),
+                icon: const AfterwordIcon(Icons.close),
                 onPressed: () => setState(_selected.clear),
               ),
             ]
@@ -102,7 +103,7 @@ class _LibraryPageState extends State<LibraryPage> {
               if (_scope == '回收站' && hasScopeItems)
                 IconButton(
                   tooltip: '清空回收站',
-                  icon: const Icon(Icons.delete_sweep_outlined),
+                  icon: const AfterwordIcon(Icons.delete_sweep_outlined),
                   onPressed: () => performItemAction(
                     context,
                     widget.controller,
@@ -112,7 +113,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
               PopupMenuButton<String>(
                 tooltip: '添加资料',
-                icon: const Icon(Icons.add),
+                icon: const AfterwordIcon(Icons.add),
                 onSelected: (value) {
                   switch (value) {
                     case 'url':
@@ -148,7 +149,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   child: SearchBar(
                     controller: _search,
                     hintText: '搜索标题、正文、笔记',
-                    leading: const Icon(Icons.search),
+                    leading: const AfterwordIcon(Icons.search),
                     trailing: [
                       if (_query.isNotEmpty)
                         IconButton(
@@ -157,7 +158,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             _search.clear();
                             setState(() => _query = '');
                           },
-                          icon: const Icon(Icons.close),
+                          icon: const AfterwordIcon(Icons.close),
                         ),
                     ],
                     onChanged: (value) => setState(() => _query = value),
@@ -215,6 +216,13 @@ class _LibraryPageState extends State<LibraryPage> {
           if (!hasResults)
             SliverToBoxAdapter(
               child: EmptyState(
+                scene: hasScopeItems
+                    ? 'search-empty'
+                    : switch (_scope) {
+                        '已归档' => 'archive-empty',
+                        '回收站' => 'trash-empty',
+                        _ => 'library-empty',
+                      },
                 icon: hasScopeItems
                     ? Icons.search_off_outlined
                     : Icons.collections_bookmark_outlined,
@@ -235,7 +243,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 action: !hasScopeItems && _scope == '使用中'
                     ? FilledButton.icon(
                         onPressed: () => _showUrlDialog(context),
-                        icon: const Icon(Icons.add_link),
+                        icon: const AfterwordIcon(Icons.add_link),
                         label: const Text('收藏链接'),
                       )
                     : null,
@@ -305,7 +313,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     horizontal: layout.pagePadding,
                     vertical: 4,
                   ),
-                  leading: Icon(
+                  leading: AfterwordIcon(
                     hit.type == 'topic'
                         ? Icons.travel_explore_outlined
                         : Icons.science_outlined,

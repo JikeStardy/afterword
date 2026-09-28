@@ -4,6 +4,7 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'common.dart';
 import 'item_detail.dart';
+import 'afterword_art.dart';
 
 class RssPage extends StatefulWidget {
   const RssPage({super.key, required this.controller, required this.data});
@@ -42,22 +43,23 @@ class _RssPageState extends State<RssPage> {
       actions: [
         IconButton(
           tooltip: '刷新订阅',
-          icon: const Icon(Icons.refresh),
+          icon: const AfterwordIcon(Icons.refresh),
           onPressed: () => _refreshFeeds(context),
         ),
         IconButton(
           tooltip: '添加订阅',
-          icon: const Icon(Icons.add),
+          icon: const AfterwordIcon(Icons.add),
           onPressed: () => _addFeed(context),
         ),
       ],
       child: data.feeds.isEmpty && entries.isEmpty
           ? EmptyState(
+              scene: 'rss-empty',
               icon: Icons.rss_feed,
               title: '还没有 RSS 订阅',
               message: '添加订阅后只浏览条目；只有你选中的条目才会保存并进入分析。',
               action: FilledButton.icon(
-                icon: const Icon(Icons.add),
+                icon: const AfterwordIcon(Icons.add),
                 label: const Text('添加订阅'),
                 onPressed: () => _addFeed(context),
               ),
@@ -91,12 +93,12 @@ class _RssPageState extends State<RssPage> {
                       runSpacing: 8,
                       children: [
                         FilledButton.icon(
-                          icon: const Icon(Icons.done_all),
+                          icon: const AfterwordIcon(Icons.done_all),
                           label: Text('标记 ${_selected.length} 条已处理'),
                           onPressed: () => _processSelected(context, false),
                         ),
                         OutlinedButton.icon(
-                          icon: const Icon(Icons.block),
+                          icon: const AfterwordIcon(Icons.block),
                           label: const Text('批量跳过'),
                           onPressed: () => _processSelected(context, true),
                         ),
@@ -105,6 +107,7 @@ class _RssPageState extends State<RssPage> {
                   ),
                 if (entries.isEmpty)
                   const EmptyState(
+                    scene: 'feed-quiet',
                     icon: Icons.inbox_outlined,
                     title: '暂无新条目',
                     message: '刷新订阅后，新内容会先停在这里等待你挑选。',
@@ -356,7 +359,7 @@ class _FeedRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.rss_feed),
+      leading: const AfterwordIcon(Icons.rss_feed),
       title: Text(feed.title.isEmpty ? feed.url : feed.title),
       subtitle: Text(
         feed.error.isEmpty
@@ -370,12 +373,12 @@ class _FeedRow extends StatelessWidget {
         children: [
           IconButton(
             tooltip: feed.paused ? '恢复订阅' : '暂停订阅',
-            icon: Icon(feed.paused ? Icons.play_arrow : Icons.pause),
+            icon: AfterwordIcon(feed.paused ? Icons.play_arrow : Icons.pause),
             onPressed: () => onPaused(!feed.paused),
           ),
           IconButton(
             tooltip: '退订',
-            icon: const Icon(Icons.delete_outline),
+            icon: const AfterwordIcon(Icons.delete_outline),
             onPressed: onRemove,
           ),
         ],
@@ -460,7 +463,7 @@ class _EntryRow extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 FilledButton.icon(
-                  icon: const Icon(Icons.playlist_add_check),
+                  icon: const AfterwordIcon(Icons.playlist_add_check),
                   label: Text(savedItem == null ? '选中处理' : '打开资料'),
                   onPressed: savedItem == null ? onSelect : onOpen,
                 ),

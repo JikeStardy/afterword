@@ -2,7 +2,7 @@
 
 ## 已选方向：长尾狐
 
-已按第 07 号方向制作 [长尾狐设计包](fox-kit/README.md)：功能 SVG、狐狸场景与可控制的动效。[打开离线样册](fox-kit/index.html)。本轮交付设计资产，尚未接入 App。
+已按第 07 号方向制作 [长尾狐设计包](fox-kit/README.md)：功能 SVG、狐狸场景与可控制的动效。[打开离线样册](fox-kit/index.html)。设计包交付记录仍作为历史；当前 `feat/fox-app-integration` 正在把长尾狐套件接入 Flutter/Android，详见 [App 接入记录](APP_INTEGRATION.md)。
 
 ## 第二轮：九宫格方案对比
 
@@ -16,7 +16,7 @@
 | 04 段落：出版与编辑符号 | 05 接话：想法之间的回应 | 06 跨页桥：从书页通向下一步 |
 | 07 长尾狐：好奇、灵巧的角色 | 08 书脊印：个人资料库 | 09 续章 a：Afterword 字母标志 |
 
-本轮由内置 imagegen 生成一张含九个方案的对比板，统一底色、尺寸与视觉重量，供选择方向；尚未替换 App 图标。[本轮完整提示词](afterword-icon-grid-v2-prompt.txt)。
+本轮由内置 imagegen 生成一张含九个方案的对比板，统一底色、尺寸与视觉重量，供选择方向；当时尚未替换 App 图标。[本轮完整提示词](afterword-icon-grid-v2-prompt.txt)。
 
 ## 方案一：翻页的书签
 

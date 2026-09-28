@@ -678,7 +678,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
             Notification.Builder(app)
         }
         builder
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_afterword_notification)
             .setContentTitle(title.ifBlank { "有下文" })
             .setContentText(body)
             .setContentIntent(contentIntent)

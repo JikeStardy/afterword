@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
+import 'afterword_art.dart';
 
 typedef AsyncAction = Future<void> Function();
 
@@ -22,8 +23,16 @@ class AppFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = ModalRoute.of(context)?.canPop ?? false;
     return Scaffold(
       appBar: AppBar(
+        leading: canPop
+            ? IconButton(
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                icon: const AfterwordIcon(Icons.chevron_left),
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null,
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: actions,
       ),
@@ -44,13 +53,15 @@ class AppFrame extends StatelessWidget {
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
-    required this.icon,
+    required this.scene,
     required this.title,
     required this.message,
+    this.icon,
     this.action,
   });
 
-  final IconData icon;
+  final String scene;
+  final IconData? icon;
   final String title;
   final String message;
   final Widget? action;
@@ -65,7 +76,12 @@ class EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 44, color: colors.primary),
+              AfterwordScene(
+                scene: scene,
+                motion: FoxMotion.empty,
+                size: 112,
+                color: colors.primary,
+              ),
               const SizedBox(height: 16),
               Text(title, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
@@ -164,7 +180,7 @@ class SourceList extends StatelessWidget {
             ),
             trailing: onSourceTap == null
                 ? null
-                : const Icon(Icons.chevron_right),
+                : const AfterwordIcon(Icons.chevron_right),
             onTap: onSourceTap == null ? null : () => onSourceTap!(entry.$2),
           ),
       ],
@@ -275,12 +291,12 @@ class AssetStrip extends StatelessWidget {
                           File(path),
                           fit: BoxFit.cover,
                           errorBuilder: (context, _, _) =>
-                              const Icon(Icons.image_not_supported),
+                              const AfterwordIcon(Icons.image_not_supported),
                         )
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.insert_drive_file),
+                            const AfterwordIcon(Icons.insert_drive_file),
                             Padding(
                               padding: const EdgeInsets.all(8),
                               child: Text(
@@ -316,9 +332,27 @@ Future<void> runUiAction(
       return;
     }
     if (success != null) {
+      final snackTheme = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(success)));
+        ..showSnackBar(
+          SnackBar(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AfterwordScene(
+                  scene: 'saved',
+                  motion: FoxMotion.saved,
+                  size: 40,
+                  color: snackTheme.onInverseSurface,
+                  backgroundColor: snackTheme.inverseSurface,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(success)),
+              ],
+            ),
+          ),
+        );
     }
   } catch (error) {
     if (!context.mounted) {
@@ -563,3 +597,38 @@ String shortDate(DateTime? value) {
   return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
       '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 }
+
+bool researchRunIsComplete(ResearchRun run) => run.status == 'complete';
+
+String researchRunStatusLabel(String value) => switch (value) {
+  'complete' => '已完成',
+  'running' => '运行中',
+  'paused' => '已暂停',
+  'budget' => '预算用尽',
+  'failed' => '有异常',
+  'interrupted' => '已中断',
+  'queued' => '排队中',
+  'pending' => '待确认',
+  'completed' || 'done' => '旧版完成状态',
+  _ => value.isEmpty ? '运行中' : value,
+};
+
+String researchRunScene(String value) => switch (value) {
+  'complete' => 'complete',
+  'running' => 'analyzing',
+  'paused' => 'paused',
+  'budget' => 'unanalyzed',
+  'failed' || 'interrupted' => 'startup-error',
+  'queued' || 'pending' => 'research-empty',
+  _ => 'research-empty',
+};
+
+FoxMotion researchRunMotion(String value) => switch (value) {
+  'complete' => FoxMotion.complete,
+  'running' => FoxMotion.analyze,
+  'paused' => FoxMotion.paused,
+  'budget' => FoxMotion.paused,
+  'failed' || 'interrupted' => FoxMotion.retry,
+  'queued' || 'pending' => FoxMotion.idle,
+  _ => FoxMotion.none,
+};

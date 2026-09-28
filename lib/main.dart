@@ -10,6 +10,7 @@ import 'core/diagnostics.dart';
 import 'platform/native_bridge.dart';
 import 'ui/app_shell.dart';
 import 'ui/common.dart';
+import 'ui/afterword_art.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -174,7 +175,13 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, size: 42),
+                AfterwordScene(
+                  scene: 'startup-error',
+                  motion: FoxMotion.retry,
+                  size: 112,
+                  color: Theme.of(context).colorScheme.primary,
+                  semanticLabel: '启动失败',
+                ),
                 const SizedBox(height: 16),
                 const Text('有下文启动失败'),
                 const SizedBox(height: 8),
@@ -200,7 +207,7 @@ class _ReadlaterStartupErrorState extends State<ReadlaterStartupError> {
                           dimension: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.restore),
+                      : const AfterwordIcon(Icons.restore),
                   label: const Text('从备份恢复'),
                   onPressed: _recovering ? null : _restoreFromBackup,
                 ),

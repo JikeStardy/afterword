@@ -5,6 +5,7 @@ import '../core/models.dart';
 import 'common.dart';
 import 'research_dialogs.dart';
 import 'research_detail.dart';
+import 'afterword_art.dart';
 
 class ResearchPage extends StatelessWidget {
   const ResearchPage({super.key, required this.controller, required this.data});
@@ -21,22 +22,23 @@ class ResearchPage extends StatelessWidget {
       actions: [
         IconButton(
           tooltip: '单次研究',
-          icon: const Icon(Icons.travel_explore),
+          icon: const AfterwordIcon(Icons.travel_explore),
           onPressed: () => _startResearch(context),
         ),
         IconButton(
           tooltip: '新建主题',
-          icon: const Icon(Icons.add),
+          icon: const AfterwordIcon(Icons.add),
           onPressed: () => _addTopic(context),
         ),
       ],
       child: data.topics.isEmpty && data.runs.isEmpty
           ? EmptyState(
+              scene: 'research-empty',
               icon: Icons.psychology_alt_outlined,
               title: '还没有研究主题',
               message: '可以先围绕一个长期问题建立主题，再把收藏资料积累成有来源的综述。',
               action: FilledButton.icon(
-                icon: const Icon(Icons.add),
+                icon: const AfterwordIcon(Icons.add),
                 label: const Text('新建主题'),
                 onPressed: () => _addTopic(context),
               ),
@@ -203,7 +205,7 @@ class _TopicRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
+              AfterwordIcon(
                 topic.tracking
                     ? Icons.notifications_active
                     : Icons.travel_explore_outlined,
@@ -246,7 +248,7 @@ class _TopicRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right),
+              const AfterwordIcon(Icons.chevron_right),
             ],
           ),
         ),
@@ -279,8 +281,8 @@ class _RunRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                run.status == 'completed'
+              AfterwordIcon(
+                researchRunIsComplete(run)
                     ? Icons.check_circle_outline
                     : Icons.science_outlined,
                 color: Theme.of(context).colorScheme.primary,
@@ -306,8 +308,8 @@ class _RunRow extends StatelessWidget {
                       runSpacing: 4,
                       children: [
                         StatusPill(
-                          label: _runStatus(run.status),
-                          positive: run.status == 'completed',
+                          label: researchRunStatusLabel(run.status),
+                          positive: researchRunIsComplete(run),
                         ),
                         Text(
                           '${run.calls}/${run.callLimit} 次调用',
@@ -323,7 +325,7 @@ class _RunRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right),
+              const AfterwordIcon(Icons.chevron_right),
             ],
           ),
         ),
@@ -337,14 +339,6 @@ String _topicStatus(String value) => switch (value) {
   'running' => '研究中',
   'failed' => '有异常',
   _ => value.isEmpty ? '未跟踪' : value,
-};
-
-String _runStatus(String value) => switch (value) {
-  'completed' => '已完成',
-  'running' => '运行中',
-  'failed' => '有异常',
-  'pending' => '待确认',
-  _ => value.isEmpty ? '运行中' : value,
 };
 
 String _runBrief(ResearchRun run) {

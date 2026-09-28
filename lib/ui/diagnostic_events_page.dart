@@ -8,6 +8,7 @@ import '../core/diagnostic_controller.dart';
 import '../core/diagnostics.dart';
 import '../services/diagnostic_transfer.dart';
 import 'common.dart';
+import 'afterword_art.dart';
 
 class DiagnosticEventsPage extends StatefulWidget {
   const DiagnosticEventsPage({super.key, required this.controller});
@@ -200,6 +201,7 @@ class _DiagnosticEventsPageState extends State<DiagnosticEventsPage> {
     width: 245,
     child: DropdownButtonFormField<String>(
       key: ValueKey('$label:$selected'),
+      icon: const AfterwordIcon(Icons.arrow_drop_down),
       initialValue: values.any((v) => v.$1 == selected) ? selected : '',
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
@@ -238,7 +240,7 @@ class _DiagnosticEventsPageState extends State<DiagnosticEventsPage> {
           IconButton(
             tooltip: '清空诊断记录',
             onPressed: _busy ? null : _clear,
-            icon: const Icon(Icons.delete_outline),
+            icon: const AfterwordIcon(Icons.delete_outline),
           ),
         ],
         child: ListView(
@@ -360,7 +362,7 @@ class _DiagnosticEventsPageState extends State<DiagnosticEventsPage> {
                             });
                           }
                         }),
-                  icon: const Icon(Icons.inventory_2_outlined),
+                  icon: const AfterwordIcon(Icons.inventory_2_outlined),
                   label: const Text('生成诊断包'),
                 ),
                 OutlinedButton(

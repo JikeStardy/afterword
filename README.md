@@ -8,6 +8,8 @@ Save it. See where it leads.
 
 项目原名 Readlater；内部 package、applicationId 与本地数据路径继续保留 `readlater` 标识，以支持已安装版本和既有数据兼容。更名范围与本次验证见 [更名记录](docs/AFTERWORD_RENAME.md)。
 
+长尾狐图标已接入导航、功能按钮、空状态与操作反馈，Android 桌面、启动及通知图标使用同一品牌轮廓。资源生成方法和接入验证见 [长尾狐 App 接入记录](docs/branding/APP_INTEGRATION.md)。
+
 ## 开发协作
 
 开发流程、分支与提交、测试和发布规范见 [CONTRIBUTING.md](CONTRIBUTING.md)；AI 协作规则见 [AGENTS.md](AGENTS.md)。首次获取仓库运行 `flutter pub get --enforce-lockfile`、`bash tool/setup-dev.sh`，随后用 `bash tool/check.sh full` 验证。代码托管于 [JikeStardy/afterword](https://github.com/JikeStardy/afterword)，主分支为 `main`；AI 可提交功能分支，合并和推送需用户授权。
@@ -22,7 +24,7 @@ Save it. See where it leads.
 
 - Flutter **3.47.5** / Dart **3.13.4**（依赖版本见 `pubspec.lock`）
 - Android SDK 36、JDK 21；Android 首期。iOS/macOS 工程已保留，平台能力仍需对应阶段补齐和验收。
-- Node.js 仅用于启动可选的本地集成测试服务，不是 App 运行依赖。
+- Node.js 用于可选的本地集成测试服务和品牌资源生成，不是 App 运行依赖。
 
 ```sh
 flutter pub get
