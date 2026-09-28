@@ -289,6 +289,39 @@ void main() {
     expect(controller.data.settings.readingPreset, ReadingPreset.editorial);
   });
   test(
+    'reader font scale saves independently and rolls back on failure',
+    () async {
+      await controller.saveSettings(
+        AppSettings(
+          endpoint: 'https://trusted.example/v1',
+          textModel: 'configured-model',
+          explicitInterests: ['长期阅读'],
+        ),
+        apiKey: 'private-model',
+      );
+
+      await controller.setReaderFontScale(1.42);
+
+      final saved = controller.store.load().settings;
+      expect(saved.readerFontScale, 1.42);
+      expect(saved.endpoint, 'https://trusted.example/v1');
+      expect(saved.textModel, 'configured-model');
+      expect(saved.explicitInterests, ['长期阅读']);
+      expect(controller.modelConfigured, isTrue);
+
+      controller.dispose();
+      final store = FailingSaveStore(dir.path);
+      controller = AppController(store: store, secrets: TestSecrets());
+      await controller.initialize();
+      expect(controller.data.settings.readerFontScale, 1.42);
+
+      store.failSave = true;
+      await expectLater(controller.setReaderFontScale(0.9), throwsStateError);
+
+      expect(controller.data.settings.readerFontScale, 1.42);
+    },
+  );
+  test(
     'invalid downloaded images are reported without losing saved article',
     () async {
       controller.dispose();

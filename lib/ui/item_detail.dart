@@ -114,7 +114,6 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
   final ScrollController _scroll = ScrollController();
   final Map<String, GlobalKey> _blockKeys = <String, GlobalKey>{};
   final Map<String, GlobalKey> _analysisKeys = <String, GlobalKey>{};
-  late double _fontScale;
   bool _initialTargetHandled = false;
   ReadingPreset? _lastPreset;
   String? _visibleAnalysisAnchorId;
@@ -127,10 +126,6 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
   @override
   void initState() {
     super.initState();
-    final rawScale = item.toJson()['readerFontScale'];
-    _fontScale = rawScale is num
-        ? rawScale.toDouble().clamp(0.85, 1.6).toDouble()
-        : 1.0;
     _scroll.addListener(_captureVisibleAnalysisAnchor);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -180,6 +175,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
 
   @override
   Widget build(BuildContext context) {
+    final fontScale = controller.data.settings.readerFontScale;
     return DefaultTabController(
       length: 3,
       initialIndex:
@@ -226,13 +222,6 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
         ],
         child: Column(
           children: [
-            _ReaderToolbar(
-              fontScale: _fontScale,
-              onChanged: (value) {
-                setState(() => _fontScale = value);
-                _saveReaderFontScale(value);
-              },
-            ),
             const TabBar(
               tabs: [
                 Tab(text: '原文'),
@@ -265,14 +254,14 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                     if (item.contentHistory.isNotEmpty)
                       _RevisionHistoryCard(
                         revisions: item.contentHistory,
-                        fontScale: _fontScale,
+                        fontScale: fontScale,
                       ),
                     if (_shouldShowWebRecovery(item))
                       _WebRecoveryPanel(controller: controller, item: item),
                     _StructuredReader(
                       controller: controller,
                       item: item,
-                      fontScale: _fontScale,
+                      fontScale: fontScale,
                       onSelection: (text, blockId) =>
                           _saveAnnotation(context, text, blockId),
                       onPageNote: (page) => _savePageNote(context, page),
@@ -284,7 +273,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                     _AnalysisSection(
                       controller: controller,
                       item: item,
-                      fontScale: _fontScale,
+                      fontScale: fontScale,
                       analysisKeys: _analysisKeys,
                     ),
                   ]),
@@ -293,6 +282,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                       controller: controller,
                       item: item,
                       notes: notes,
+                      fontScale: fontScale,
                       onSave: () async {
                         await controller.updateNotes(item.id, notes.text);
                         syncSavedNotes(notes.text);
@@ -419,10 +409,6 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
         offset.toDouble().clamp(0, _scroll.position.maxScrollExtent).toDouble(),
       );
     }
-  }
-
-  void _saveReaderFontScale(double value) {
-    controller.updateReaderFontScale(item.id, value);
   }
 
   void _saveReadingPosition() {
@@ -609,14 +595,14 @@ class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        needsRecovery ? '补全网页正文' : '网页正文已保存',
+                        needsRecovery ? '补全网页正文' : '已保存提取内容',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 6),
                       Text(
                         needsRecovery
                             ? '链接仍保留。可打开页面完成验证后保存正文，或把正文粘贴到这份资料里。'
-                            : '来源链接仍保留。',
+                            : '来源链接仍保留。如内容不全，可重新抓取或补充正文。',
                       ),
                       if (bodyOrigin == 'pasted') ...[
                         const SizedBox(height: 8),
@@ -645,7 +631,7 @@ class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
                 ),
               ],
             ),
-            if (needsRecovery) ...[
+            ...[
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -670,7 +656,7 @@ class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.edit_note_outlined),
-                    label: const Text('粘贴正文'),
+                    label: Text(needsRecovery ? '粘贴正文' : '补充正文'),
                   ),
                 ],
               ),
@@ -865,38 +851,6 @@ class _RevisionHistoryCard extends StatelessWidget {
             child: const Text('关闭'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ReaderToolbar extends StatelessWidget {
-  const _ReaderToolbar({required this.fontScale, required this.onChanged});
-
-  final double fontScale;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-        child: Row(
-          children: [
-            const Icon(Icons.format_size, size: 20),
-            Expanded(
-              child: Slider(
-                value: fontScale,
-                min: 0.85,
-                max: 1.6,
-                divisions: 15,
-                label: '${(fontScale * 100).round()}%',
-                onChanged: onChanged,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1286,16 +1240,19 @@ class _NotesCard extends StatelessWidget {
     required this.controller,
     required this.item,
     required this.notes,
+    required this.fontScale,
     required this.onSave,
   });
 
   final AppController controller;
   final LibraryItem item;
   final TextEditingController notes;
+  final double fontScale;
   final Future<void> Function() onSave;
 
   @override
   Widget build(BuildContext context) {
+    final bodyStyle = TextStyle(fontSize: 17 * fontScale, height: 1.7);
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
@@ -1307,6 +1264,7 @@ class _NotesCard extends StatelessWidget {
             controller: notes,
             minLines: 3,
             maxLines: 6,
+            style: bodyStyle,
             decoration: const InputDecoration(hintText: '记录疑问、适用条件或收藏原因'),
           ),
           const SizedBox(height: 10),
@@ -1336,6 +1294,7 @@ class _NotesCard extends StatelessWidget {
                       : 'PDF 第 ${annotation.anchor.pdfPage} 页',
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
+                  style: bodyStyle,
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

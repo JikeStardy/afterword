@@ -44,6 +44,33 @@ void main() {
     expect(find.text('正文从打开的页面保存'), findsOneWidget);
   });
 
+  testWidgets(
+    'saved extraction still allows supplementing an incomplete article',
+    (tester) async {
+      final saved = _webItem(
+        url: 'https://example.com/article',
+        body: '只是网页摘要',
+      );
+      saved.bodyOrigin = 'http';
+      final controller = _controller([saved]);
+      await _pumpDetail(tester, controller);
+      expect(find.text('网页正文已保存'), findsNothing);
+      expect(find.text('已保存提取内容'), findsOneWidget);
+      await tester.ensureVisible(find.text('补充正文'));
+      await tester.tap(find.text('补充正文'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField).last,
+        '这是补充后的完整正文，应该保留旧摘要作为历史。',
+      );
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await _pumpAction(tester);
+      expect(saved.body, contains('补充后的完整正文'));
+      expect(saved.contentHistory.single.body, '只是网页摘要');
+    },
+  );
+
   testWidgets('wechat recovery cancellation does not show success', (
     tester,
   ) async {

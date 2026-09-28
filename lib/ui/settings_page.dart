@@ -20,6 +20,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _savingAppearance = false;
+  double? _draftReaderFontScale;
   late final TextEditingController _endpoint;
   late final TextEditingController _textModel;
   late final TextEditingController _visionModel;
@@ -301,6 +302,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _appearanceSection(BuildContext context) {
     final selected = widget.controller.data.settings.readingPreset;
+    final fontScale =
+        _draftReaderFontScale ??
+        widget.controller.data.settings.readerFontScale;
     return SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -310,6 +314,34 @@ class _SettingsPageState extends State<SettingsPage> {
           Text(
             '即时生效，阅读内容与操作保持一致。',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Text('阅读字号', style: Theme.of(context).textTheme.titleSmall),
+          Row(
+            children: [
+              const Icon(Icons.format_size, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Slider(
+                  key: const ValueKey('reader-font-scale'),
+                  value: fontScale,
+                  min: 0.85,
+                  max: 1.6,
+                  divisions: 15,
+                  label: '${(fontScale * 100).round()}%',
+                  onChanged: _savingAppearance
+                      ? null
+                      : (value) => _setReaderFontScale(context, value),
+                ),
+              ),
+              SizedBox(
+                width: 48,
+                child: Text(
+                  '${(fontScale * 100).round()}%',
+                  textAlign: TextAlign.end,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           for (final preset in ReadingPreset.values)
@@ -349,6 +381,27 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _setReaderFontScale(BuildContext context, double value) async {
+    if (_savingAppearance) return;
+    setState(() {
+      _savingAppearance = true;
+      _draftReaderFontScale = value;
+    });
+    try {
+      await runUiAction(
+        context,
+        () => widget.controller.setReaderFontScale(value),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingAppearance = false;
+          _draftReaderFontScale = null;
+        });
+      }
+    }
   }
 
   Future<void> _setPreset(BuildContext context, ReadingPreset preset) async {

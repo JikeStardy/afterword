@@ -244,8 +244,12 @@ void main() {
       );
       expect(find.text('仅此资料 / 研究'), findsOneWidget);
       final taskTile = find.widgetWithText(ListTile, runTask.title);
+      final taskTitle = find.descendant(
+        of: taskTile,
+        matching: find.text(runTask.title),
+      );
       await tester.scrollUntilVisible(
-        taskTile,
+        taskTitle,
         240,
         scrollable: find
             .descendant(
@@ -254,7 +258,8 @@ void main() {
             )
             .first,
       );
-      await tester.tap(taskTile);
+      await tester.pumpAndSettle();
+      await tester.tap(taskTitle);
       await tester.pumpAndSettle();
       expect(
         tester

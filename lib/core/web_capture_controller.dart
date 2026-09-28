@@ -11,6 +11,14 @@ extension WebCaptureController on AppController {
 
   Future<bool> recoverWebArticle(String itemId) async {
     final item = _webItem(itemId);
+    final article = await _captureWebArticle(item);
+    if (article == null) return false;
+    _saveRecoveredArticle(item, article, origin: 'webview');
+    return true;
+  }
+
+  Future<ExtractedArticle?> _captureWebArticle(LibraryItem item) async {
+    final itemId = item.id;
     if (!WebArticleCapture.allowsUrl(item.url)) {
       throw const FormatException('页面保存仅支持 HTTPS 微信公众号链接');
     }
@@ -21,7 +29,7 @@ extension WebCaptureController on AppController {
     final originalUrl = item.url;
     try {
       final capture = await native.captureWebArticle(originalUrl);
-      if (capture == null) return false;
+      if (capture == null) return null;
       _guard(revision);
       if (!identical(_webItem(itemId), item) ||
           version != item.contentVersion ||
@@ -33,9 +41,8 @@ extension WebCaptureController on AppController {
       if (!WebArticleCapture.isSameArticle(originalUrl, capture.url)) {
         throw const FormatException('页面已跳转到其他文章，请返回原文章或另行收藏');
       }
-      final article = ContentService.extractHtml(capture.html, capture.url);
-      _saveRecoveredArticle(item, article, origin: 'webview');
-      return true;
+      DiagnosticScope.ensureAllowed();
+      return ContentService.extractHtml(capture.html, capture.url);
     } finally {
       _openWebCaptures.remove(itemId);
     }

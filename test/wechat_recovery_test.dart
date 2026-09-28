@@ -30,10 +30,14 @@ class _Native extends NativeBridge {
 class _Content extends ContentService {
   int fetches = 0, images = 0;
   ExtractedArticle? article;
-  Completer<void>? imageEntered, releaseImage;
+  Completer<void>? imageEntered, releaseImage, fetchEntered, releaseFetch;
   @override
   Future<ExtractedArticle> fetchArticle(String url) async {
     fetches++;
+    if (releaseFetch != null) {
+      fetchEntered!.complete();
+      await releaseFetch!.future;
+    }
     if (article != null) return article!;
     throw StateError('HTTP must not fetch a recovered body');
   }
@@ -86,6 +90,138 @@ void main() {
     await controller.waitForIdle();
     controller.dispose();
     directory.deleteSync(recursive: true);
+  });
+
+  test(
+    'foreground link import recovers automatically in the same job',
+    () async {
+      controller.setForeground(true);
+      native.result.complete(const WebArticleCapture(url: url, html: html));
+      controller.data.items.clear();
+      final captured = await controller.captureUrl(url, openWhenBlocked: true);
+      await controller.waitForIdle();
+      expect(native.opens, 1);
+      expect(content.fetches, 1);
+      expect(captured.body, contains('明确保存'));
+      expect(captured.bodyOrigin, 'webview');
+      expect(captured.status, 'waiting');
+      expect(controller.runtime.jobs, hasLength(1));
+      expect(controller.runtime.jobs.single.status, 'paused');
+      expect(controller.store.load().items.single.body, captured.body);
+    },
+  );
+
+  test(
+    'background and ordinary captures never open a recovery window',
+    () async {
+      native.result.complete(null);
+      controller.data.items.clear();
+      await controller.captureUrl(url, openWhenBlocked: true);
+      await controller.waitForIdle();
+      controller.setForeground(true);
+      await controller.captureUrl('https://mp.weixin.qq.com/s/ordinary');
+      await controller.waitForIdle();
+      expect(native.opens, 0);
+      expect(controller.data.items.every((item) => item.body.isEmpty), true);
+    },
+  );
+
+  test(
+    'cancelled automatic recovery keeps link and does not reopen on retry',
+    () async {
+      controller.setForeground(true);
+      native.result.complete(null);
+      controller.data.items.clear();
+      final captured = await controller.captureUrl(url, openWhenBlocked: true);
+      await controller.waitForIdle();
+      expect(native.opens, 1);
+      expect(captured.body, isEmpty);
+      expect(captured.error, contains('正文提取失败'));
+      await controller.retryJob(controller.runtime.jobs.single.id);
+      await controller.waitForIdle();
+      expect(native.opens, 1);
+      expect(captured.url, url);
+    },
+  );
+
+  test(
+    'archive during automatic capture discards late native content',
+    () async {
+      controller.setForeground(true);
+      controller.data.items.clear();
+      final captured = await controller.captureUrl(url, openWhenBlocked: true);
+      for (var i = 0; i < 100 && native.opens == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      expect(native.opens, 1);
+      await controller.archiveItems([captured.id]);
+      native.result.complete(const WebArticleCapture(url: url, html: html));
+      await controller.waitForIdle();
+      expect(captured.body, isEmpty);
+      expect(captured.isActive, false);
+    },
+  );
+
+  test('HTTP success skips visible recovery', () async {
+    controller.setForeground(true);
+    content.article = const ExtractedArticle(
+      title: '可直接读取',
+      body: 'HTTP 返回的完整文章正文',
+      url: url,
+      imageUrls: [],
+    );
+    controller.data.items.clear();
+    final captured = await controller.captureUrl(url, openWhenBlocked: true);
+    await controller.waitForIdle();
+    expect(captured.bodyOrigin, 'http');
+    expect(captured.body, 'HTTP 返回的完整文章正文');
+    expect(native.opens, 0);
+  });
+
+  test(
+    'cancelling a queued import clears its automatic window request',
+    () async {
+      controller.setForeground(true);
+      controller.data.items.clear();
+      native.result.complete(null);
+      await controller.captureUrl(url, openWhenBlocked: true);
+      final job = controller.runtime.jobs.single;
+      await controller.cancelJob(job.id);
+      await controller.waitForIdle();
+      await controller.retryJob(job.id);
+      await controller.waitForIdle();
+      expect(native.opens, 0);
+    },
+  );
+
+  test('app leaving foreground during HTTP does not open a window', () async {
+    controller.setForeground(true);
+    content.fetchEntered = Completer<void>();
+    content.releaseFetch = Completer<void>();
+    controller.data.items.clear();
+    final captured = await controller.captureUrl(url, openWhenBlocked: true);
+    await content.fetchEntered!.future;
+    controller.setForeground(false);
+    content.releaseFetch!.complete();
+    await controller.waitForIdle();
+    expect(native.opens, 0);
+    expect(captured.body, isEmpty);
+  });
+
+  test('automatic recovery leaves other queued captures runnable', () async {
+    controller.setForeground(true);
+    native.result.complete(const WebArticleCapture(url: url, html: html));
+    controller.data.items.clear();
+    final captured = await controller.captureUrl(url, openWhenBlocked: true);
+    final other = await controller.captureUrl('https://example.com/other');
+    await controller.waitForIdle();
+    expect(captured.bodyOrigin, 'webview');
+    expect(other.status, 'failed');
+    expect(content.fetches, 2);
+    expect(
+      controller.runtime.jobs.every((job) => job.status != 'cancelled'),
+      true,
+    );
   });
 
   test(

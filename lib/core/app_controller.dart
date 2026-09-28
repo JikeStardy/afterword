@@ -61,6 +61,7 @@ class AppController extends ChangeNotifier {
   bool _serviceStarted = false;
   final Map<String, Timer> _refreshTimers = {};
   final Set<String> _openWebCaptures = {};
+  final Set<String> _interactiveWebCaptureRequests = {};
   Map<String, String>? pendingNavigation;
   bool? notificationsAllowed;
   String? lastError;
@@ -431,6 +432,7 @@ class AppController extends ChangeNotifier {
       : {};
 
   void _invalidateTasks() {
+    _interactiveWebCaptureRequests.clear();
     _lifecycleRevision++;
     for (final job in runtime.jobs) {
       if (['queued', 'running', 'paused'].contains(job.status)) {
@@ -556,6 +558,18 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> setReaderFontScale(double value) async {
+    final previous = data.settings.readerFontScale;
+    data.settings.readerFontScale = value;
+    if (data.settings.readerFontScale == previous) return;
+    try {
+      _save();
+    } catch (_) {
+      data.settings.readerFontScale = previous;
+      rethrow;
+    }
+  }
+
   String sourceLabel(String id) {
     final item = data.items.where((i) => i.id == id).firstOrNull;
     if (item != null) {
@@ -620,6 +634,7 @@ class AppController extends ChangeNotifier {
     String url, {
     String notes = '',
     bool analyzeAutomatically = true,
+    bool openWhenBlocked = false,
   }) => _work(
     () async {
       final uri = Uri.tryParse(url.trim());
@@ -656,6 +671,11 @@ class AppController extends ChangeNotifier {
       diagnostics.addInputIds([item.id]);
       if (analyzeAutomatically) {
         _enqueue('capture', item.id);
+        if (openWhenBlocked &&
+            _foreground &&
+            WebArticleCapture.allowsUrl(item.url)) {
+          _interactiveWebCaptureRequests.add(item.id);
+        }
       } else {
         item.status = 'retryable';
       }
@@ -670,18 +690,37 @@ class AppController extends ChangeNotifier {
     final revision = _lifecycleRevision;
     _requireActive(item);
     diagnostics.addInputIds([item.id]);
+    final openWhenBlocked = _interactiveWebCaptureRequests.remove(item.id);
     item.status = 'pending';
     item.error = '';
     _save();
     try {
       var imageUrls = strings(_currentJob?.checkpoint['imageUrls']);
       if (_currentJob?.checkpoint['articleFetched'] != true) {
-        final article = await diagnostics.step(
-          '提取网页正文',
-          () => content.fetchArticle(item.url),
-        );
+        var origin = 'http';
+        final article = await diagnostics.step('提取网页正文', () async {
+          try {
+            return await content.fetchArticle(item.url);
+          } on DiagnosticCancelled {
+            rethrow;
+          } catch (_) {
+            _guard(revision);
+            DiagnosticScope.ensureAllowed();
+            if (!openWhenBlocked ||
+                !_foreground ||
+                _digestOnly ||
+                item.body.trim().isNotEmpty) {
+              rethrow;
+            }
+            final recovered = await _captureWebArticle(item);
+            if (recovered == null) rethrow;
+            origin = 'webview';
+            return recovered;
+          }
+        });
         _guard(revision);
-        _replaceWebBody(item, article, origin: 'http');
+        DiagnosticScope.ensureAllowed();
+        _replaceWebBody(item, article, origin: origin);
         imageUrls = article.imageUrls;
         _saveCheckpoint('正文已保存', {
           'imageUrls': imageUrls,
@@ -2036,6 +2075,7 @@ class AppController extends ChangeNotifier {
                   await captureUrl(
                     match[0]!,
                     analyzeAutomatically: !share.cancelled,
+                    openWhenBlocked: !share.cancelled,
                   );
                 } else {
                   await captureText(

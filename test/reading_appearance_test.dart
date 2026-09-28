@@ -83,6 +83,22 @@ void main() {
         ReadingPreset.compact,
       );
       expect(controller.store.load().settings.endpoint, originalEndpoint);
+      final fontSlider = find.byKey(const ValueKey('reader-font-scale'));
+      await tester.scrollUntilVisible(
+        fontSlider,
+        -400,
+        scrollable: scrollable,
+        maxScrolls: 30,
+      );
+      await Scrollable.ensureVisible(tester.element(fontSlider), alignment: .5);
+      await tester.pumpAndSettle();
+      await tester.drag(fontSlider, const Offset(180, 0));
+      await tester.pumpAndSettle();
+      expect(
+        controller.store.load().settings.readerFontScale,
+        greaterThan(1.0),
+      );
+      expect(controller.store.load().settings.endpoint, originalEndpoint);
       expect(
         Theme.of(tester.element(find.byType(SettingsPage)))
             .extension<ReadingLayout>()!
@@ -149,6 +165,9 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
+          final fontSlider = find.byKey(const ValueKey('reader-font-scale'));
+          expect(fontSlider, findsOneWidget);
+          expect(tester.getSize(fontSlider).width, greaterThan(120));
           await tester.scrollUntilVisible(
             find.byKey(const ValueKey('appearance-magazine')),
             250,

@@ -1027,10 +1027,21 @@ class AppSettings {
   bool researchNotifications;
   ReadingPreset readingPreset;
   int digestHour, digestMinute;
+  double _readerFontScale;
   int _trashRetentionDays;
+  double get readerFontScale => _readerFontScale;
+  set readerFontScale(double value) {
+    _readerFontScale = _validReaderFontScale(value);
+  }
+
   int get trashRetentionDays => _trashRetentionDays;
   set trashRetentionDays(int value) {
     _trashRetentionDays = _validRetention(value);
+  }
+
+  static double _validReaderFontScale(double value) {
+    if (!value.isFinite) return 1.0;
+    return value.clamp(0.85, 1.6).toDouble();
   }
 
   static int _validRetention(int value) {
@@ -1059,11 +1070,13 @@ class AppSettings {
     this.digestNotifications = true,
     this.researchNotifications = true,
     this.readingPreset = ReadingPreset.editorial,
+    double readerFontScale = 1.0,
     int trashRetentionDays = 7,
   }) : explicitInterests = explicitInterests ?? [],
        inferredInterests = inferredInterests ?? [],
        suppressedInterests = suppressedInterests ?? [],
        confirmedInterests = confirmedInterests ?? [],
+       _readerFontScale = _validReaderFontScale(readerFontScale),
        _trashRetentionDays = _validRetention(trashRetentionDays);
   Json toJson() => {
     'endpoint': endpoint,
@@ -1084,6 +1097,7 @@ class AppSettings {
     'digestNotifications': digestNotifications,
     'researchNotifications': researchNotifications,
     'readingPreset': readingPreset.name,
+    'readerFontScale': readerFontScale,
     'trashRetentionDays': trashRetentionDays,
   };
   factory AppSettings.fromJson(Json j) => AppSettings(
@@ -1109,6 +1123,9 @@ class AppSettings {
       ReadingPreset.values,
       j['readingPreset'],
       ReadingPreset.editorial,
+    ),
+    readerFontScale: _validReaderFontScale(
+      doubleValue(j['readerFontScale'], 1.0),
     ),
     trashRetentionDays: j['trashRetentionDays'] == 3 ? 3 : 7,
   );

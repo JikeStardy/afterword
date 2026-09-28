@@ -7,6 +7,44 @@ import 'package:readlater/services/content_service.dart';
 
 void main() {
   group('article extraction', () {
+    test(
+      'explicit short article bodies may match their metadata description',
+      () {
+        for (final container in [
+          '<div itemprop="articleBody">',
+          '<div id="js_content">',
+        ]) {
+          final article = ContentService.extractHtml(
+            '''
+          <html><head><title>今日简讯</title><meta name="description" content="这是一篇完整的简短更新，所有信息都在这一段。"></head>
+          <body>$container<p>这是一篇完整的简短更新，所有信息都在这一段。</p></div></body></html>
+        ''',
+            container.contains('js_content')
+                ? 'https://mp.weixin.qq.com/s/short'
+                : 'https://example.com/short',
+          );
+          expect(article.body, '这是一篇完整的简短更新，所有信息都在这一段。');
+        }
+      },
+    );
+
+    test(
+      'Tencent article container excludes recommendations and site chrome',
+      () {
+        final article = ContentService.extractHtml('''
+        <html><head><meta property="og:title" content="正文标题"></head><body>
+          <div><p>页面顶部广告不属于正文。</p></div>
+          <section class="c-mod col-article"><h1 class="col-article-title">正文标题</h1>
+            <div><div class="rno-markdown undefined rno-"><p>这是真正的文章第一段。</p><p>这是完整正文的最后一段。</p></div></div>
+          </section>
+          <div><h2>相关快讯</h2><p>其他文章的推荐摘要。</p></div>
+        </body></html>
+      ''', 'https://cloud.tencent.com/developer/news/1116925');
+        expect(article.body, '这是真正的文章第一段。\n\n这是完整正文的最后一段。');
+        expect(article.title, '正文标题');
+      },
+    );
+
     test('extracts a readable blog article and normalizes image urls', () {
       final article = ContentService.extractHtml('''
         <html>
@@ -67,6 +105,121 @@ void main() {
         article.contentBlocks.map((block) => block.id).toSet(),
         hasLength(3),
       );
+    });
+
+    test('keeps mixed container and inline text in document order', () {
+      final article = ContentService.extractHtml('''
+        <article>
+          <h1>Reading without missing paragraphs</h1>
+          <p>A short introduction.</p>
+          <div>First <strong>important</strong> paragraph.
+            <section>Second <em>useful</em> paragraph.</section>
+            Text after the section.
+          </div>
+          <div>Another line.<br>Next line.</div>
+          <p>Before image.<img src="/figure.png">After image.</p>
+        </article>
+      ''', 'https://example.com/containers');
+
+      expect(article.contentBlocks.map((block) => block.text), [
+        'Reading without missing paragraphs',
+        'A short introduction.',
+        'First important paragraph.',
+        'Second useful paragraph.',
+        'Text after the section.',
+        'Another line. Next line.',
+        'Before image.',
+        'https://example.com/figure.png',
+        'After image.',
+      ]);
+      expect(article.body, contains('Second useful paragraph.'));
+      expect(article.body, contains('Text after the section.'));
+    });
+
+    test('preserves repeated content and nested semantic blocks once', () {
+      final article = ContentService.extractHtml('''
+        <article>
+          <blockquote><p>A repeated quotation.</p><p>A repeated quotation.</p></blockquote>
+          <ul><li><p>A list item.</p><ul><li>A nested item.</li></ul></li></ul>
+          <pre><code>final answer = evidence;</code></pre>
+          <table><tr><td><p>Claim</p></td><td>Evidence</td></tr></table>
+          <img src="/repeat.png"><img src="/repeat.png">
+        </article>
+      ''', 'https://example.com/semantic');
+
+      expect(article.contentBlocks.map((block) => block.kind), [
+        'quote',
+        'quote',
+        'list',
+        'list',
+        'code',
+        'table',
+        'image',
+        'image',
+      ]);
+      expect(article.contentBlocks.map((block) => block.text), [
+        'A repeated quotation.',
+        'A repeated quotation.',
+        'A list item.',
+        'A nested item.',
+        'final answer = evidence;',
+        'Claim | Evidence',
+        'https://example.com/repeat.png',
+        'https://example.com/repeat.png',
+      ]);
+      expect(
+        article.contentBlocks.map((block) => block.id).toSet(),
+        hasLength(8),
+      );
+      expect(article.imageUrls, ['https://example.com/repeat.png']);
+    });
+
+    test('prefers an explicit article body over a teaser article', () {
+      final article = ContentService.extractHtml('''
+        <html><head><meta property="og:title" content="The full article"></head>
+        <body>
+          <article><h1>Related article</h1><p>This is only a teaser.</p></article>
+          <main><div itemprop="articleBody"><div>The complete first paragraph.</div>
+            <section>The complete final paragraph.</section></div></main>
+        </body></html>
+      ''', 'https://example.com/explicit-body');
+
+      expect(article.title, 'The full article');
+      expect(
+        article.body,
+        'The complete first paragraph.\n\nThe complete final paragraph.',
+      );
+      expect(article.body, isNot(contains('teaser')));
+    });
+
+    test(
+      'rejects a title and metadata description without article content',
+      () {
+        expect(
+          () => ContentService.extractHtml('''
+          <html><head><meta name="description" content="A summary of the article, with no actual paragraphs."></head>
+          <body><article><h1>A page with only its preview</h1>
+            <p>A summary of the article, with no actual paragraphs.</p>
+          </article></body></html>
+        ''', 'https://example.com/preview'),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains('摘要'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('keeps a valid short article with content beyond its description', () {
+      final article = ContentService.extractHtml('''
+        <html><head><meta name="description" content="A short reading note."></head>
+        <body><article><h1>A brief note</h1><p>Read slowly. Keep your own notes.</p></article></body></html>
+      ''', 'https://example.com/brief');
+
+      expect(article.body, contains('Read slowly. Keep your own notes.'));
     });
 
     test('prefers WeChat js_content and lazy image data-src', () {

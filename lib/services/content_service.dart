@@ -135,8 +135,15 @@ class ContentService {
       );
     }
 
-    final root =
+    final explicitBody =
         wechatBody ??
+        document.querySelector('[itemprop~="articleBody"]') ??
+        (baseUri.host == 'cloud.tencent.com' &&
+                RegExp(r'^/developer/(news|article)/').hasMatch(baseUri.path)
+            ? document.querySelector('.rno-markdown')
+            : null);
+    final root =
+        explicitBody ??
         document.querySelector('article') ??
         document.querySelector('main') ??
         document.body;
@@ -146,15 +153,17 @@ class ContentService {
 
     final title = _articleTitle(document, root);
     final blocks = _articleBlocks(root, baseUri);
-    final body = blocks.isEmpty
-        ? _articleText(root)
-        : blocks
-              .where((block) => block.kind != 'image')
-              .map((block) => block.text)
-              .where((text) => text.trim().isNotEmpty)
-              .join('\n\n');
+    final body = blocks
+        .where((block) => block.kind != 'image')
+        .map((block) => block.text)
+        .where((text) => text.trim().isNotEmpty)
+        .join('\n\n');
     if (_isBlockedOrEmpty(body)) {
       throw const FormatException('无法提取正文：页面为空或需要登录/验证');
+    }
+
+    if (explicitBody == null && _isMetadataPreview(document, title, blocks)) {
+      throw const FormatException('仅获取到网页标题和摘要，尚未获取完整正文');
     }
 
     return ExtractedArticle(
@@ -511,36 +520,45 @@ class ContentService {
     return _clean(document.querySelector('title')?.text ?? '');
   }
 
-  static String _articleText(dom.Element root) {
-    final lines = <String>[];
-    for (final element in root.querySelectorAll(
-      'h1,h2,h3,h4,p,li,blockquote,pre',
-    )) {
-      final text = _clean(element.text);
-      if (text.isNotEmpty && (lines.isEmpty || lines.last != text)) {
-        lines.add(text);
-      }
-    }
-    if (lines.isEmpty) {
-      final fallback = _clean(root.text);
-      if (fallback.isNotEmpty) lines.add(fallback);
-    }
-    return lines.join('\n\n');
-  }
-
   static List<ExtractedContentBlock> _articleBlocks(
     dom.Element root,
     Uri baseUri,
   ) {
     final blocks = <ExtractedContentBlock>[];
-    var index = 0;
-    final seen = <String>{};
-    for (final element in root.querySelectorAll(
-      'h1,h2,h3,h4,p,li,blockquote,pre,table,img',
-    )) {
-      final tag = element.localName?.toLowerCase() ?? '';
+    const boundaries = {
+      'article',
+      'main',
+      'div',
+      'section',
+      'p',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'ul',
+      'ol',
+      'li',
+      'blockquote',
+      'pre',
+      'table',
+      'img',
+      'figure',
+      'figcaption',
+      'dl',
+      'dt',
+      'dd',
+      'address',
+      'details',
+      'summary',
+      'hr',
+    };
+
+    void append(String tag, String text, {String imageUrl = ''}) {
+      if (text.isEmpty && imageUrl.isEmpty) return;
       final kind = switch (tag) {
-        'h1' || 'h2' || 'h3' || 'h4' => 'heading',
+        'h1' || 'h2' || 'h3' || 'h4' || 'h5' || 'h6' => 'heading',
         'li' => 'list',
         'blockquote' => 'quote',
         'pre' => 'code',
@@ -548,42 +566,119 @@ class ContentService {
         'img' => 'image',
         _ => 'paragraph',
       };
-      final imageUrl = tag == 'img'
-          ? _resolveHttpUrl(
-              element.attributes['data-src'] ??
-                  element.attributes['data-original'] ??
-                  element.attributes['src'],
-              baseUri,
-            )
-          : null;
-      final text = tag == 'table'
-          ? _tableText(element)
-          : (tag == 'img'
-                ? _clean(
-                    element.attributes['alt'] ??
-                        element.attributes['title'] ??
-                        imageUrl ??
-                        '',
-                  )
-                : _clean(element.text));
-      if (text.isEmpty && imageUrl == null) continue;
-      final dedupeKey = '$kind|$text|$imageUrl';
-      if (!seen.add(dedupeKey)) continue;
-      index++;
+      final value = text.isEmpty ? imageUrl : text;
+      final seed =
+          '${blocks.length + 1}|$kind|$value|${imageUrl.isEmpty ? null : imageUrl}';
       blocks.add(
         ExtractedContentBlock(
-          id: 'b${_stableId('$index|$dedupeKey').substring(0, 10)}',
+          id: 'b${_stableId(seed).substring(0, 10)}',
           kind: kind,
-          text: text.isEmpty ? imageUrl! : text,
-          level: kind == 'heading'
-              ? int.tryParse(tag.replaceFirst('h', ''))
-              : null,
+          text: value,
+          level: kind == 'heading' ? int.tryParse(tag.substring(1)) : null,
           sourceContext: tag,
-          imageUrl: imageUrl ?? '',
+          imageUrl: imageUrl,
         ),
       );
     }
+
+    void visit(dom.Element element, {String inheritedTag = ''}) {
+      final tag = element.localName ?? '';
+      if (tag == 'img') {
+        final url = _resolveHttpUrl(
+          element.attributes['data-src'] ??
+              element.attributes['data-original'] ??
+              element.attributes['src'],
+          baseUri,
+        );
+        append(
+          tag,
+          _clean(
+            element.attributes['alt'] ?? element.attributes['title'] ?? '',
+          ),
+          imageUrl: url ?? '',
+        );
+        return;
+      }
+      if (tag == 'pre' || tag == 'table') {
+        append(
+          tag,
+          tag == 'table' ? _tableText(element) : _clean(element.text),
+        );
+        for (final image in element.querySelectorAll('img')) {
+          visit(image);
+        }
+        return;
+      }
+
+      // Paragraph wrappers inside quotes and list items retain their meaning.
+      final semanticTag = switch (tag) {
+        'h1' ||
+        'h2' ||
+        'h3' ||
+        'h4' ||
+        'h5' ||
+        'h6' ||
+        'li' ||
+        'blockquote' => tag,
+        _ => inheritedTag,
+      };
+      final text = StringBuffer();
+      void flush() {
+        append(
+          semanticTag.isEmpty ? tag : semanticTag,
+          _clean(text.toString()),
+        );
+        text.clear();
+      }
+
+      void read(dom.Node node) {
+        if (node is dom.Text) {
+          text.write(node.data);
+        } else if (node is dom.Element) {
+          final childTag = node.localName ?? '';
+          if (childTag == 'br') {
+            text.write('\n');
+          } else if (boundaries.contains(childTag)) {
+            flush();
+            visit(node, inheritedTag: semanticTag);
+          } else {
+            for (final child in node.nodes) {
+              read(child);
+            }
+          }
+        }
+      }
+
+      for (final node in element.nodes) {
+        read(node);
+      }
+      flush();
+    }
+
+    visit(root);
     return blocks;
+  }
+
+  static bool _isMetadataPreview(
+    dom.Document document,
+    String title,
+    List<ExtractedContentBlock> blocks,
+  ) {
+    final content = blocks.where(
+      (block) => !(block.kind == 'heading' && block.text == title),
+    );
+    if (content.isEmpty || content.any((block) => block.kind != 'paragraph')) {
+      return false;
+    }
+    final text = _clean(content.map((block) => block.text).join(' '));
+    for (final meta in document.querySelectorAll(
+      'meta[name="description"],meta[property="og:description"],'
+      'meta[name="twitter:description"]',
+    )) {
+      final description = _clean(meta.attributes['content'] ?? '');
+      if (description.isNotEmpty && description == text) return true;
+    }
+    return false;
   }
 
   static String _tableText(dom.Element table) {

@@ -8,6 +8,7 @@ import android.net.http.SslError
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -45,6 +46,14 @@ class WebArticleCaptureDialog(
     private var lastFinishedUrl: String? = null
     private var timeoutRunnable: Runnable? = null
     private var extractTimeoutRunnable: Runnable? = null
+    private var probeToken = 0
+    private var activeProbeToken: Int? = null
+    private var autoCaptureGeneration: Int? = null
+    private var probeRunnable: Runnable? = null
+    private var probeTimeoutRunnable: Runnable? = null
+    private var autoCaptureDeadline = 0L
+    private var stableSignature: String? = null
+    private var stableSince = 0L
 
     private lateinit var dialog: Dialog
     private lateinit var webView: WebView
@@ -66,7 +75,7 @@ class WebArticleCaptureDialog(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         )
-        updateStatus("页面加载中，请在窗口中完成微信验证。", busy = true)
+        updateStatus("页面加载中，正文加载完成后会自动保存。", busy = true)
         load(initialUrl)
     }
 
@@ -78,6 +87,7 @@ class WebArticleCaptureDialog(
         closed.set(true)
         cancelLoadTimeout()
         cancelExtractTimeout()
+        cancelAutoCapture()
         releaseWebView()
         if (::dialog.isInitialized && dialog.isShowing) {
             dialog.dismiss()
@@ -92,14 +102,14 @@ class WebArticleCaptureDialog(
         }
         root.addView(
             TextView(activity).apply {
-                text = "微信公众号正文回退"
+                text = "保存微信公众号正文"
                 setTextColor(DEEP_GREEN)
                 textSize = 18f
             },
         )
         root.addView(
             TextView(activity).apply {
-                text = "请在下方页面完成验证，确认正文可见后点击保存正文。"
+                text = "正文加载完成后会自动保存。如需微信验证，请在下方页面完成；也可手动保存。"
                 setTextColor(TEXT_MUTED)
                 textSize = 14f
                 setPadding(0, dp(6), 0, dp(8))
@@ -236,24 +246,28 @@ class WebArticleCaptureDialog(
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 navigationGeneration++
+                cancelAutoCapture()
                 cancelActiveExtraction()
                 loadFailed = false
                 lastFinishedUrl = null
                 saveButton.isEnabled = false
                 retryButton.visibility = View.GONE
                 updateAddress(url.orEmpty())
-                updateStatus("页面加载中，请在窗口中完成微信验证。", busy = true)
+                updateStatus("页面加载中，正文加载完成后会自动保存。", busy = true)
                 scheduleLoadTimeout(navigationGeneration)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 val pageUrl = url.orEmpty()
-                if (closed.get() || loadFailed || !isAllowedWeChatArticleUrl(pageUrl)) return
+                if (closed.get() || loadFailed || !isAllowedWeChatArticleUrl(pageUrl) ||
+                    pageUrl != webView.url.orEmpty() || lastFinishedUrl == pageUrl
+                ) return
                 cancelLoadTimeout()
                 lastFinishedUrl = pageUrl
                 updateAddress(pageUrl)
                 saveButton.isEnabled = true
-                updateStatus("页面已加载。请确认正文可见后点击保存正文。", busy = false)
+                updateStatus("正在等待正文加载完成；如需验证，请在页面中完成。", busy = false)
+                startAutoCapture()
             }
 
             override fun onReceivedError(
@@ -298,6 +312,11 @@ class WebArticleCaptureDialog(
 
     private fun load(url: String) {
         if (closed.get()) return
+        navigationGeneration++
+        lastFinishedUrl = null
+        cancelLoadTimeout()
+        cancelAutoCapture()
+        cancelActiveExtraction()
         loadFailed = false
         extracting = false
         activeExtractToken = null
@@ -307,8 +326,9 @@ class WebArticleCaptureDialog(
         webView.loadUrl(url)
     }
 
-    private fun extractHtml() {
+    private fun extractHtml(expectedSignature: String? = null) {
         if (closed.get() || extracting) return
+        if (expectedSignature == null) cancelAutoCapture()
         val expectedGeneration = navigationGeneration
         val expectedUrl = webView.url.orEmpty()
         if (!isAllowedWeChatArticleUrl(expectedUrl) || expectedUrl != lastFinishedUrl) {
@@ -321,9 +341,10 @@ class WebArticleCaptureDialog(
         saveButton.isEnabled = false
         updateStatus("正在提取正文。", busy = true)
         scheduleExtractTimeout(expectedGeneration, token)
-        webView.evaluateJavascript(EXTRACT_SCRIPT) { raw ->
+        val script = expectedSignature?.let(::automaticExtractionScript) ?: EXTRACT_SCRIPT
+        webView.evaluateJavascript(script) { raw ->
             handler.post {
-                handleExtractResult(expectedGeneration, expectedUrl, token, raw)
+                handleExtractResult(expectedGeneration, expectedUrl, token, raw, expectedSignature != null)
             }
         }
     }
@@ -333,9 +354,24 @@ class WebArticleCaptureDialog(
         expectedUrl: String,
         token: Int,
         raw: String?,
+        automatic: Boolean,
     ) {
         if (closed.get()) return
         if (activeExtractToken != token) return
+        if (automatic && (activeProbeToken == null || SystemClock.uptimeMillis() >= autoCaptureDeadline)) {
+            clearActiveExtraction(token)
+            if (activeProbeToken != null) {
+                finishAutoCaptureWait()
+            } else {
+                saveButton.isEnabled = !loadFailed && expectedUrl == lastFinishedUrl &&
+                    expectedUrl == webView.url.orEmpty()
+            }
+            return
+        }
+        if (loadFailed) {
+            clearActiveExtraction(token)
+            return
+        }
         if (expectedGeneration != navigationGeneration || expectedUrl != webView.url.orEmpty()) {
             clearActiveExtraction(token)
             updateStatus("页面已变化，请重新确认后保存。", busy = false, failed = true)
@@ -363,6 +399,17 @@ class WebArticleCaptureDialog(
         val error = json.optString("error")
         if (error.isNotBlank()) {
             saveButton.isEnabled = true
+            if (automatic && error == "content_changed") {
+                // Keep the original deadline while the new document stabilizes.
+                stableSignature = null
+                stableSince = 0L
+                val probe = activeProbeToken ?: return
+                if (isCurrentProbe(probe, expectedGeneration, expectedUrl)) {
+                    updateStatus("正文仍在更新，加载完成后会自动保存。", busy = false)
+                    scheduleProbe(probe, expectedGeneration, expectedUrl)
+                }
+                return
+            }
             val message = when (error) {
                 "missing_content" -> "未找到可保存的公众号正文，请完成验证后重试。"
                 "too_large" -> "页面正文超过 5 MiB，无法通过回退窗口保存。"
@@ -391,6 +438,7 @@ class WebArticleCaptureDialog(
     }
 
     private fun updateStatus(message: String, busy: Boolean, failed: Boolean = false) {
+        if (failed) cancelAutoCapture()
         statusView.text = message
         statusView.setTextColor(if (failed) ERROR_RED else TEXT_MUTED)
         progressBar.visibility = if (busy) View.VISIBLE else View.GONE
@@ -399,6 +447,80 @@ class WebArticleCaptureDialog(
 
     private fun updateAddress(url: String) {
         addressView.text = url.ifBlank { initialUrl }
+    }
+
+    private fun startAutoCapture() {
+        // Duplicate page-finished events must not extend the automatic window.
+        if (autoCaptureGeneration == navigationGeneration || closed.get() || extracting) return
+        val expectedUrl = lastFinishedUrl ?: return
+        if (!sameArticle(initialUrl, expectedUrl)) return
+        val generation = navigationGeneration
+        autoCaptureGeneration = generation
+        val token = ++probeToken
+        activeProbeToken = token
+        autoCaptureDeadline = SystemClock.uptimeMillis() + AUTO_CAPTURE_TIMEOUT_MS
+        probeTimeoutRunnable = Runnable {
+            if (closed.get() || activeProbeToken != token) return@Runnable
+            finishAutoCaptureWait()
+        }.also { handler.postDelayed(it, AUTO_CAPTURE_TIMEOUT_MS) }
+        probeForArticle(token, generation, expectedUrl)
+    }
+
+    private fun isCurrentProbe(token: Int, generation: Int, expectedUrl: String): Boolean =
+        !closed.get() && !loadFailed && !extracting && activeProbeToken == token &&
+            SystemClock.uptimeMillis() < autoCaptureDeadline &&
+            navigationGeneration == generation && lastFinishedUrl == expectedUrl &&
+            webView.url.orEmpty() == expectedUrl
+
+    private fun probeForArticle(token: Int, generation: Int, expectedUrl: String) {
+        if (!isCurrentProbe(token, generation, expectedUrl)) return
+        webView.evaluateJavascript(PROBE_SCRIPT) { raw ->
+            handler.post {
+                if (!isCurrentProbe(token, generation, expectedUrl)) return@post
+                val json = runCatching { JSONObject(decodeJavascriptString(raw)) }.getOrNull()
+                val signature = json?.optString("signature").orEmpty()
+                if (json?.optString("url") == expectedUrl &&
+                    json.optBoolean("ready") && signature.isNotEmpty()
+                ) {
+                    val now = SystemClock.uptimeMillis()
+                    if (signature != stableSignature) {
+                        stableSignature = signature
+                        stableSince = now
+                    } else if (now - stableSince >= AUTO_CAPTURE_STABLE_MS) {
+                        extractHtml(expectedSignature = signature)
+                        return@post
+                    }
+                } else {
+                    stableSignature = null
+                    stableSince = 0L
+                }
+                scheduleProbe(token, generation, expectedUrl)
+            }
+        }
+    }
+
+    private fun scheduleProbe(token: Int, generation: Int, expectedUrl: String) {
+        probeRunnable = Runnable {
+            probeForArticle(token, generation, expectedUrl)
+        }.also { handler.postDelayed(it, AUTO_CAPTURE_PROBE_MS) }
+    }
+
+    private fun finishAutoCaptureWait() {
+        cancelAutoCapture()
+        cancelActiveExtraction()
+        saveButton.isEnabled = !loadFailed && lastFinishedUrl == webView.url.orEmpty()
+        updateStatus("暂未自动保存。请完成验证并确认正文可见后，点击保存正文。", busy = false)
+    }
+
+    private fun cancelAutoCapture() {
+        activeProbeToken = null
+        probeRunnable?.let(handler::removeCallbacks)
+        probeTimeoutRunnable?.let(handler::removeCallbacks)
+        probeRunnable = null
+        probeTimeoutRunnable = null
+        autoCaptureDeadline = 0L
+        stableSignature = null
+        stableSince = 0L
     }
 
     private fun scheduleLoadTimeout(generation: Int) {
@@ -454,6 +576,7 @@ class WebArticleCaptureDialog(
         if (!closed.compareAndSet(false, true)) return
         cancelLoadTimeout()
         cancelExtractTimeout()
+        cancelAutoCapture()
         onComplete(value)
         if (::dialog.isInitialized) dialog.dismiss()
     }
@@ -462,6 +585,7 @@ class WebArticleCaptureDialog(
         if (!closed.compareAndSet(false, true)) return
         cancelLoadTimeout()
         cancelExtractTimeout()
+        cancelAutoCapture()
         onClosed()
         if (::dialog.isInitialized) {
             dialog.dismiss()
@@ -473,6 +597,7 @@ class WebArticleCaptureDialog(
     private fun releaseWebView() {
         cancelLoadTimeout()
         cancelExtractTimeout()
+        cancelAutoCapture()
         if (::webView.isInitialized) {
             webView.stopLoading()
             webView.webChromeClient = null
@@ -513,6 +638,9 @@ class WebArticleCaptureDialog(
         private const val MAX_HTML_BYTES = 5 * 1024 * 1024
         private const val LOAD_TIMEOUT_MS = 45_000L
         private const val EXTRACT_TIMEOUT_MS = 10_000L
+        private const val AUTO_CAPTURE_TIMEOUT_MS = 60_000L
+        private const val AUTO_CAPTURE_STABLE_MS = 2_000L
+        private const val AUTO_CAPTURE_PROBE_MS = 500L
         private const val WARM_WHITE = 0xFFFAF8F3.toInt()
         private const val DEEP_GREEN = 0xFF476B4F.toInt()
         private const val TEXT_DARK = 0xFF27352B.toInt()
@@ -523,6 +651,32 @@ class WebArticleCaptureDialog(
             data class QueryKey(val biz: String, val mid: String, val idx: String) : ArticleIdentity
             data class ExactUrl(val url: String) : ArticleIdentity
         }
+
+        private val PROBE_SCRIPT = """
+            (function() {
+              var result = { ready: false, url: location.href };
+              if (document.readyState !== 'complete' || document.visibilityState !== 'visible') return JSON.stringify(result);
+              var content = document.querySelector('#js_content');
+              if (!content || !content.getClientRects().length) return JSON.stringify(result);
+              for (var element = content; element; element = element.parentElement) {
+                var style = getComputedStyle(element);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return JSON.stringify(result);
+              }
+              var text = (content.textContent || '').trim();
+              if (!text || !(content.innerText || '').trim()) return JSON.stringify(result);
+              var images = Array.prototype.map.call(content.querySelectorAll('img'), function(image) {
+                return ['src', 'data-src', 'srcset', 'data-srcset'].map(function(name) {
+                  return image.getAttribute(name) || '';
+                }).concat(image.currentSrc || '');
+              });
+              // Exact text and image values detect even equal-length hydration changes.
+              var signature = JSON.stringify([document.title || '', text, images]);
+              if (signature.length > $MAX_HTML_BYTES) return JSON.stringify(result);
+              result.ready = true;
+              result.signature = signature;
+              return JSON.stringify(result);
+            })();
+        """.trimIndent()
 
         private val EXTRACT_SCRIPT = """
             (function() {
@@ -548,6 +702,21 @@ class WebArticleCaptureDialog(
               });
             })();
         """.trimIndent()
+
+        private fun automaticExtractionScript(expectedSignature: String): String {
+            val probeExpression = PROBE_SCRIPT.removeSuffix(";")
+            val captureExpression = EXTRACT_SCRIPT.removeSuffix(";")
+            // Readiness, exact signature and HTML are read in one synchronous JS task.
+            return """
+                (function() {
+                  var readiness = JSON.parse($probeExpression);
+                  if (!readiness.ready || readiness.signature !== ${JSONObject.quote(expectedSignature)}) {
+                    return JSON.stringify({ error: 'content_changed', url: location.href });
+                  }
+                  return $captureExpression;
+                })();
+            """.trimIndent()
+        }
 
         fun validateWeChatArticleUrl(url: String): String? {
             val uri = safeUri(url) ?: return null

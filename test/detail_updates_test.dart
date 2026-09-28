@@ -540,6 +540,57 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets(
+    'restored reading position survives global font setting changes',
+    (tester) async {
+      final controller = _controller(
+        AppData(
+          settings: AppSettings(readerFontScale: 1.2),
+          items: [
+            LibraryItem(
+              id: 'source',
+              title: '来源',
+              kind: ItemKind.text,
+              readerFontScale: 1.6,
+              readingPosition: ReadingPosition(blockId: 'target'),
+              contentBlocks: [
+                ContentBlock(
+                  id: 'intro',
+                  kind: ContentBlockKind.paragraph,
+                  text: '开头原文',
+                ),
+                ContentBlock(
+                  id: 'target',
+                  kind: ContentBlockKind.paragraph,
+                  text: '恢复到这里',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        _wrap(
+          ArticleDetailPage(
+            controller: controller,
+            item: controller.data.items.single,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Slider), findsNothing);
+      expect(controller.data.items.single.readingPosition?.blockId, 'target');
+      expect(_selectableFontSize(tester, '恢复到这里'), closeTo(20.4, 0.001));
+
+      await controller.setReaderFontScale(1.5);
+      await tester.pumpAndSettle();
+
+      expect(controller.data.items.single.readingPosition?.blockId, 'target');
+      expect(_selectableFontSize(tester, '恢复到这里'), closeTo(25.5, 0.001));
+    },
+  );
+
   testWidgets('article markdown export writes a real markdown file payload', (
     tester,
   ) async {
@@ -756,4 +807,13 @@ class _FakeFilePicker extends FilePickerPlatform
     savedMimeType = mimeType;
     return Uri.parse('content://readlater/$fileName');
   }
+}
+
+double _selectableFontSize(WidgetTester tester, String text) {
+  final selectableText = tester.widget<SelectableText>(
+    find.byWidgetPredicate(
+      (widget) => widget is SelectableText && widget.data == text,
+    ),
+  );
+  return selectableText.style!.fontSize!;
 }

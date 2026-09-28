@@ -465,6 +465,7 @@ extension TaskController on AppController {
     }
     job.status = 'cancelled';
     job.error = '用户已取消';
+    _interactiveWebCaptureRequests.remove(job.entityId);
     _markJobInterrupted(job);
     if (identical(job, _currentJob)) _lifecycleRevision++;
     final item = data.items.where((i) => i.id == job.entityId).firstOrNull;
@@ -476,6 +477,7 @@ extension TaskController on AppController {
   }
 
   Future<void> pauseTasks({bool cancelled = false}) async {
+    _interactiveWebCaptureRequests.clear();
     diagnostics.log(
       DiagnosticLevel.warn,
       'background',

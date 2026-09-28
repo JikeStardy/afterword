@@ -148,6 +148,69 @@ void main() {
     },
   );
 
+  testWidgets('article detail uses global font scale across items', (
+    tester,
+  ) async {
+    final first = LibraryItem(
+      id: 'first',
+      title: '第一篇',
+      kind: ItemKind.web,
+      body: '第一段原文',
+      notes: '我的笔记',
+      readerFontScale: 0.85,
+    );
+    final second = LibraryItem(
+      id: 'second',
+      title: '第二篇',
+      kind: ItemKind.web,
+      body: '第二段原文',
+      readerFontScale: 1.6,
+    );
+    final controller = _controller(
+      AppData(
+        items: [first, second],
+        settings: AppSettings(readerFontScale: 1.4),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _wrap(ArticleDetailPage(controller: controller, item: first)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Slider), findsNothing);
+    expect(_fontSizeFor(tester, '第一段原文'), closeTo(23.8, 0.001));
+    await tester.tap(find.text('笔记'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).style!.fontSize,
+      closeTo(23.8, 0.001),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      _wrap(ArticleDetailPage(controller: controller, item: second)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Slider), findsNothing);
+    expect(_fontSizeFor(tester, '第二段原文'), closeTo(23.8, 0.001));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.data = controller.store.load();
+    await tester.pumpWidget(
+      _wrap(
+        ArticleDetailPage(
+          controller: controller,
+          item: controller.data.items.first,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_fontSizeFor(tester, '第一段原文'), closeTo(23.8, 0.001));
+  });
+
   testWidgets('research run report uses reading presentation when available', (
     tester,
   ) async {
@@ -452,4 +515,13 @@ void main() {
     expect(size.width, greaterThanOrEqualTo(48));
     expect(size.height, greaterThanOrEqualTo(48));
   });
+}
+
+double _fontSizeFor(WidgetTester tester, String text) {
+  final selectableText = tester.widget<SelectableText>(
+    find.byWidgetPredicate(
+      (widget) => widget is SelectableText && widget.data == text,
+    ),
+  );
+  return selectableText.style!.fontSize!;
 }

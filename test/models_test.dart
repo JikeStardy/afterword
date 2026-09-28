@@ -44,14 +44,21 @@ void main() {
         explicitInterests: ['适用条件'],
         inferredInterests: ['笔记工具'],
         readingPreset: ReadingPreset.magazine,
+        readerFontScale: 1.35,
       );
       final copy = AppSettings.fromJson(settings.toJson());
       expect(copy.explicitInterests, ['适用条件']);
       expect(copy.inferredInterests, ['笔记工具']);
       expect(copy.readingPreset, ReadingPreset.magazine);
+      expect(copy.readerFontScale, 1.35);
       expect(
         AppSettings.fromJson({'readingPreset': 'unknown'}).readingPreset,
         ReadingPreset.editorial,
+      );
+      expect(AppSettings.fromJson({'readerFontScale': 9}).readerFontScale, 1.6);
+      expect(
+        AppSettings.fromJson({'readerFontScale': .1}).readerFontScale,
+        .85,
       );
       expect(
         copy.toJson().keys.any((key) => key.toLowerCase().contains('key')),

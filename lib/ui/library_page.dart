@@ -390,7 +390,11 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     await runUiAction(
       context,
-      () => widget.controller.captureUrl(result.$1, notes: result.$2),
+      () => widget.controller.captureUrl(
+        result.$1,
+        notes: result.$2,
+        openWhenBlocked: true,
+      ),
       success: '链接已保存',
     );
   }
