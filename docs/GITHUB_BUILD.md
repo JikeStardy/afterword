@@ -9,9 +9,16 @@
 - Pull Request → main：检查 PR 合并结果，无签名 Secret。
 - Actions → Android → Run workflow：按需验证所选分支；仅 main 可读取固定签名。
 
-在 [workflow](https://github.com/JikeStardy/afterword/actions/workflows/android.yml) 的成功运行中下载 `afterword-android-arm64-<commit SHA>` artifact。ZIP 内包含 `Afterword-<version>-android-arm64.apk`、`SHA256SUMS.txt`、`SIGNATURE.txt`、`BUILD_INFO.txt`。保留 14 天，不自动创建 GitHub Release 或打标签。
+在 [workflow](https://github.com/JikeStardy/afterword/actions/workflows/android.yml) 的成功运行中，打开构建摘要的「Android 安装包下载」，或滚动到 Artifacts。每次构建分别上传四个独立文件，保留 14 天：
 
-Actions artifact 即使来自公开仓库，也需要登录 GitHub 才能下载。进入成功运行页底部的 Artifacts，下载 ZIP 后解压安装 APK；需要免登录的公开下载链接时，另行发布测试 Release。
+- `Afterword-<version>-android-arm64.apk`：安装包，下载后直接安装，无需解压。
+- `SHA256SUMS.txt`：APK 的 SHA-256 校验值。
+- `SIGNATURE.txt`：APK 的公开签名证书信息。
+- `BUILD_INFO.txt`：版本、源码提交、签名模式和 Flutter 版本。
+
+使用 `upload-artifact v7` 的 `archive: false`，每个文件作为一条 artifact，名称就是文件名。将 APK 与 `SHA256SUMS.txt` 保存到同一目录后，可运行 `sha256sum --check SHA256SUMS.txt`（macOS 使用 `shasum -a 256 -c SHA256SUMS.txt`）核对下载完整性。
+
+Actions artifact 即使来自公开仓库，也需要登录 GitHub 才能下载。拆分文件不会改变登录要求；需要免登录的公开下载链接时，另行发布测试 Release。此 workflow 不自动创建 GitHub Release 或打标签。此前的历史构建仍保留原来的 ZIP 附件。
 
 ## 检查与工具链
 
@@ -49,4 +56,5 @@ CI 在 runner 临时目录配置 Gradle 最大 3 GiB 堆、1 GiB metaspace 和 2
 - [GitHub workflow 触发事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 - [GitHub Actions Secrets](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)
 - [GitHub Actions 构建附件下载](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)
+- [upload-artifact 单文件直接上传](https://github.com/actions/upload-artifact#upload-an-individual-file-unzipped)
 - [Android 应用签名](https://developer.android.com/studio/publish/app-signing)

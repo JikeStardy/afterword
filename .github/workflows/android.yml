@@ -105,6 +105,7 @@ jobs:
         run: node --test tool/diagnostics_receiver.test.mjs
 
       - name: Package APK and verification metadata
+        id: package
         shell: bash
         env:
           SIGNING_MODE: ${{ steps.signing.outputs.mode || 'temporary-test' }}
@@ -131,19 +132,68 @@ jobs:
           )
           printf 'Version: %s\nCommit: %s\nSigning: %s\nFlutter: %s\n' \
             "$version" "$GITHUB_SHA" "$SIGNING_MODE" "$FLUTTER_VERSION" > dist/ci-build/BUILD_INFO.txt
-          {
-            echo '### Android build'
-            echo "- Version: $version"
-            echo "- Commit: $GITHUB_SHA"
-            echo "- Signing: $SIGNING_MODE"
-            echo '- Download the APK and its checksums from the artifact below.'
-            echo '- Temporary test signatures may not match previous installations; back up data before changing installations.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "apk_path=dist/ci-build/$apk" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload installable APK
+        id: upload_apk
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: afterword-android-arm64-${{ github.sha }}
-          path: dist/ci-build/
+          path: ${{ steps.package.outputs.apk_path }}
+          archive: false
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload APK checksum
+        id: upload_checksum
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: dist/ci-build/SHA256SUMS.txt
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload signing certificate information
+        id: upload_signature
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: dist/ci-build/SIGNATURE.txt
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build information
+        id: upload_build_info
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: dist/ci-build/BUILD_INFO.txt
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Show download links
+        shell: bash
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode || 'temporary-test' }}
+          APK_URL: ${{ steps.upload_apk.outputs.artifact-url }}
+          CHECKSUM_URL: ${{ steps.upload_checksum.outputs.artifact-url }}
+          SIGNATURE_URL: ${{ steps.upload_signature.outputs.artifact-url }}
+          BUILD_INFO_URL: ${{ steps.upload_build_info.outputs.artifact-url }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### Android 安装包下载'
+            echo "- [下载安装包（APK）]($APK_URL)"
+            echo "- [下载 SHA-256 校验文件]($CHECKSUM_URL)"
+            echo "- [下载签名证书信息]($SIGNATURE_URL)"
+            echo "- [下载构建信息]($BUILD_INFO_URL)"
+            echo
+            echo '请先登录 GitHub。以上文件分别下载，APK 无需解压。'
+            echo "- Version: $VERSION"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Signing: $SIGNING_MODE"
+            if [[ "$SIGNING_MODE" == temporary-test ]]; then
+              echo '临时测试签名可能无法覆盖旧版，请先备份数据。'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
