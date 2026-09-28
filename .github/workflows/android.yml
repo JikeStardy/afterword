@@ -58,6 +58,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export ANDROID_USER_HOME="$RUNNER_TEMP/afterword-android-user"
+          echo "ANDROID_USER_HOME=$ANDROID_USER_HOME" >> "$GITHUB_ENV"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
           export GRADLE_USER_HOME="$RUNNER_TEMP/gradle"
@@ -81,10 +83,12 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]]; then
-            mkdir -p "$HOME/.android"
-            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-            chmod 600 "$HOME/.android/debug.keystore"
-            keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey > /dev/null
+            mkdir -p "$ANDROID_USER_HOME"
+            keystore="$ANDROID_USER_HOME/debug.keystore"
+            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            chmod 600 "$keystore"
+            signer_sha256=$(keytool -exportcert -keystore "$keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)
+            echo "signer_sha256=$signer_sha256" >> "$GITHUB_OUTPUT"
             echo 'mode=fixed-personal-test' >> "$GITHUB_OUTPUT"
           else
             echo 'mode=temporary-test' >> "$GITHUB_OUTPUT"
@@ -104,6 +108,7 @@ jobs:
         shell: bash
         env:
           SIGNING_MODE: ${{ steps.signing.outputs.mode || 'temporary-test' }}
+          EXPECTED_SIGNER_SHA256: ${{ steps.signing.outputs.signer_sha256 }}
         run: |
           set -euo pipefail
           version=$(sed -n 's/^version: *//p' pubspec.yaml)
@@ -113,6 +118,13 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "dist/ci-build/$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
             "dist/ci-build/$apk" > dist/ci-build/SIGNATURE.txt
+          if [[ "$SIGNING_MODE" == fixed-personal-test ]]; then
+            actual_signer=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' dist/ci-build/SIGNATURE.txt)
+            if [[ -z "$EXPECTED_SIGNER_SHA256" || "$actual_signer" != "$EXPECTED_SIGNER_SHA256" ]]; then
+              echo '::error::APK signing certificate does not match the restored test keystore.'
+              exit 1
+            fi
+          fi
           (
             cd dist/ci-build
             sha256sum "$apk" > SHA256SUMS.txt
