@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>有下文 Afterword · 长尾狐设计样册</title>
+    <link rel="stylesheet" href="./preview.css" />
+    <script defer src="./icons.js"></script>
+    <script defer src="./scenes.js"></script>
+    <script defer src="./preview.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#library">跳到图标样册</a>
+
+    <header class="hero" aria-labelledby="page-title">
+      <div class="hero__copy">
+        <p class="eyebrow">有下文 · AFTERWORD</p>
+        <h1 id="page-title">
+          <span class="hero-title-main">长尾狐</span>
+          <span class="hero-title-sub">图标与动效</span>
+        </h1>
+        <p class="hero__summary">功能图标优先清楚可认，品牌与空态交给完整的长尾狐主形。这里集中预览、检索、试色、下载和播放动效。</p>
+        <div class="hero__meta" aria-label="设计基准">
+          <span>深绿 #476B4F</span>
+          <span>暖白 #FAF8F3</span>
+          <span>24×24 / 1.75 stroke</span>
+        </div>
+        <nav class="section-nav" aria-label="样册章节">
+          <a href="#icons">图标</a>
+          <a href="#scenes">场景</a>
+          <a href="#motion">动效</a>
+          <a href="./README.md">规范</a>
+        </nav>
+      </div>
+
+      <div class="hero__mark" aria-label="长尾狐主形预览">
+        <div id="brandFox" class="brand-fox" role="img" aria-label="有下文长尾狐品牌图形"></div>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel controls-panel" aria-label="样册控制">
+        <div class="field field--search">
+          <label for="searchInput">搜索</label>
+          <input id="searchInput" type="search" autocomplete="off" placeholder="search, archive, 阅读, RSS..." />
+        </div>
+
+        <div class="field">
+          <label for="categoryFilter">分类</label>
+          <select id="categoryFilter">
+            <option value="all">全部</option>
+          </select>
+        </div>
+
+        <fieldset class="segmented" aria-label="图标尺寸">
+          <legend>尺寸</legend>
+          <button type="button" data-size="16">16</button>
+          <button type="button" data-size="20">20</button>
+          <button type="button" data-size="24" aria-pressed="true">24</button>
+          <button type="button" data-size="32">32</button>
+          <button type="button" data-size="48">48</button>
+        </fieldset>
+
+        <div class="field field--color">
+          <label for="colorInput">颜色</label>
+          <input id="colorInput" type="color" value="#476b4f" />
+        </div>
+
+        <label class="toggle">
+          <input id="selectedToggle" type="checkbox" />
+          <span>选中态</span>
+        </label>
+      </section>
+
+      <section id="library" class="split">
+        <article id="icons" class="library-column" aria-labelledby="icons-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Functional Glyphs</p>
+              <h2 id="icons-title">功能图标</h2>
+            </div>
+            <output id="iconCount" aria-live="polite">0</output>
+          </div>
+          <div id="iconGrid" class="asset-grid icon-grid" aria-live="polite"></div>
+        </article>
+
+        <article id="scenes" class="library-column" aria-labelledby="scenes-title">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">States</p>
+              <h2 id="scenes-title">狐狸场景</h2>
+            </div>
+            <output id="sceneCount" aria-live="polite">0</output>
+          </div>
+          <div id="sceneGrid" class="asset-grid scene-grid" aria-live="polite"></div>
+        </article>
+      </section>
+
+      <section id="motion" class="motion-panel" aria-labelledby="motion-title">
+        <div class="section-head section-head--motion">
+          <div>
+            <p class="eyebrow">Motion Stage</p>
+            <h2 id="motion-title">可播放动效</h2>
+          </div>
+          <div class="motion-toolbar" aria-label="动效控制">
+            <button id="playButton" type="button">播放</button>
+            <button id="pauseButton" type="button">暂停</button>
+            <button id="replayButton" type="button">重播</button>
+          </div>
+        </div>
+
+        <div class="motion-layout">
+          <div id="motionStage" class="motion-stage" tabindex="0" role="img" aria-label="长尾狐动效舞台"></div>
+
+          <div class="motion-controls">
+            <div class="field">
+              <label for="motionType">类型</label>
+              <select id="motionType"></select>
+            </div>
+
+            <div class="field">
+              <label for="sceneSelect">场景</label>
+              <select id="sceneSelect"></select>
+            </div>
+
+            <fieldset class="segmented" aria-label="播放速度">
+              <legend>速度</legend>
+              <button type="button" data-speed="0.5">0.5×</button>
+              <button type="button" data-speed="1" aria-pressed="true">1×</button>
+              <button type="button" data-speed="1.5">1.5×</button>
+            </fieldset>
+
+            <label class="toggle">
+              <input id="reduceMotionToggle" type="checkbox" />
+              <span>减少动态</span>
+            </label>
+
+            <p id="motionDescription" class="motion-description" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

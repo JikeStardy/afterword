@@ -1,5 +1,9 @@
 # 有下文 · Afterword 图标设计
 
+## 已选方向：长尾狐
+
+已按第 07 号方向制作 [长尾狐设计包](fox-kit/README.md)：功能 SVG、狐狸场景与可控制的动效。[打开离线样册](fox-kit/index.html)。本轮交付设计资产，尚未接入 App。
+
 ## 第二轮：九宫格方案对比
 
 ![九个图标方向的 3×3 对比](afterword-icon-grid-v2.png)
