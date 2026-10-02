@@ -482,33 +482,35 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _save(BuildContext context) async {
-    final settings = AppSettings.fromJson({
-      ...widget.controller.data.settings.toJson(),
-      'endpoint': _endpoint.text.trim(),
-      'textModel': _textModel.text.trim(),
-      'visionModel': _visionModel.text.trim(),
-      'conversationCallLimit':
-          int.tryParse(_conversationCallLimit.text.trim()) ??
-          widget.controller.data.settings.conversationCallLimit,
-      'modelTextContextChars':
-          int.tryParse(_modelTextContextChars.text.trim()) ??
-          widget.controller.data.settings.modelTextContextChars,
-      'searchEndpoint': _searchEndpoint.text.trim(),
-      'customInstructions': _instructions.text.trim(),
-      'explicitInterests': _lines(_explicit.text),
-      'confirmedInterests': _lines(_inferred.text),
-    });
-    await runUiAction(
-      context,
-      () => widget.controller.saveSettings(
+    await runUiAction(context, () async {
+      final callLimit = int.tryParse(_conversationCallLimit.text.trim());
+      if (callLimit == null || callLimit < 1 || callLimit > 20) {
+        throw const FormatException('对话调用上限必须为 1–20 的整数');
+      }
+      final textBudget = int.tryParse(_modelTextContextChars.text.trim());
+      if (textBudget == null || textBudget < 8000 || textBudget > 64000) {
+        throw const FormatException('单次模型文本预算必须为 8000–64000 的整数');
+      }
+      final settings = AppSettings.fromJson({
+        ...widget.controller.data.settings.toJson(),
+        'endpoint': _endpoint.text.trim(),
+        'textModel': _textModel.text.trim(),
+        'visionModel': _visionModel.text.trim(),
+        'conversationCallLimit': callLimit,
+        'modelTextContextChars': textBudget,
+        'searchEndpoint': _searchEndpoint.text.trim(),
+        'customInstructions': _instructions.text.trim(),
+        'explicitInterests': _lines(_explicit.text),
+        'confirmedInterests': _lines(_inferred.text),
+      });
+      await widget.controller.saveSettings(
         settings,
         apiKey: _apiKey.text.trim().isEmpty ? null : _apiKey.text.trim(),
         searchKey: _searchKey.text.trim().isEmpty
             ? null
             : _searchKey.text.trim(),
-      ),
-      success: '设置已保存',
-    );
+      );
+    }, success: '设置已保存');
   }
 
   Future<void> _setRetention(BuildContext context, int days) async {

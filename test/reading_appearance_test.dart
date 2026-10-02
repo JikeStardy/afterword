@@ -16,6 +16,55 @@ class _Controller extends AppController {
 }
 
 void main() {
+  for (final input in [
+    ('对话调用上限', '0', '对话调用上限必须为 1–20 的整数'),
+    ('单次模型文本预算', '7999', '单次模型文本预算必须为 8000–64000 的整数'),
+    ('对话调用上限', 'abc', '对话调用上限必须为 1–20 的整数'),
+  ]) {
+    testWidgets(
+      'invalid ${input.$1}=${input.$2} reports error without saving',
+      (tester) async {
+        final directory = Directory.systemTemp.createTempSync(
+          'settings_budget_',
+        );
+        final controller = _Controller(store: LocalStore(directory.path));
+        controller.store.save(controller.data);
+        final before = controller.data.settings.toJson();
+        addTearDown(() {
+          controller.dispose();
+          directory.deleteSync(recursive: true);
+        });
+        await tester.pumpWidget(ReadlaterApp(controller: controller));
+        await tester.tap(find.text('设置').last);
+        await tester.pumpAndSettle();
+        final scrollable = find
+            .descendant(
+              of: find.byType(SettingsPage),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final field = find.widgetWithText(TextField, input.$1);
+        await tester.scrollUntilVisible(field, 400, scrollable: scrollable);
+        await tester.enterText(field, input.$2);
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        final save = find.text('保存设置');
+        await tester.scrollUntilVisible(save, 200, scrollable: scrollable);
+        await Scrollable.ensureVisible(tester.element(save), alignment: .5);
+        await tester.pumpAndSettle();
+        expect(save.hitTestable(), findsOneWidget);
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.textContaining(input.$3), findsOneWidget);
+        expect(find.text('设置已保存'), findsNothing);
+        expect(controller.store.load().settings.toJson(), before);
+        expect(controller.data.settings.toJson(), before);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   test('preset filter labels remain legible and tab type sizes match', () {
     for (final preset in ReadingPreset.values) {
       final theme = readlaterTheme(preset);

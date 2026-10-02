@@ -61,6 +61,7 @@ class _ConversationPageState extends State<ConversationPage> {
       builder: (context, _) {
         final conversations = _scopeConversations();
         final selected = _selectedConversation(conversations);
+        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
         return AppFrame(
           title: widget.title ?? _scopeTitle(widget.scope),
           actions: [
@@ -72,24 +73,28 @@ class _ConversationPageState extends State<ConversationPage> {
           ],
           child: Column(
             children: [
-              _ConversationHeader(
-                controller: widget.controller,
-                scope: widget.scope,
-                scopeId: widget.scopeId,
-                sourceIds: selected?.sourceIds ?? _selectedSourceIdsForStart(),
-                explicitSources: selected != null
-                    ? selected.sourceIds != null
-                    : _explicitSources,
-                selected: selected,
-                conversations: conversations,
-                onSelected: (id) =>
-                    setState(() => _selectedConversationId = id),
-                onStart: _submitting ? null : () => _startConversation(context),
-                onChooseSources:
-                    selected == null && widget.scope != ConversationScope.item
-                    ? () => _chooseSources(context)
-                    : null,
-              ),
+              if (!keyboardOpen)
+                _ConversationHeader(
+                  controller: widget.controller,
+                  scope: widget.scope,
+                  scopeId: widget.scopeId,
+                  sourceIds:
+                      selected?.sourceIds ?? _selectedSourceIdsForStart(),
+                  explicitSources: selected != null
+                      ? selected.sourceIds != null
+                      : _explicitSources,
+                  selected: selected,
+                  conversations: conversations,
+                  onSelected: (id) =>
+                      setState(() => _selectedConversationId = id),
+                  onStart: _submitting
+                      ? null
+                      : () => _startConversation(context),
+                  onChooseSources:
+                      selected == null && widget.scope != ConversationScope.item
+                      ? () => _chooseSources(context)
+                      : null,
+                ),
               Expanded(
                 child: selected == null
                     ? _ConversationEmpty(
@@ -155,12 +160,14 @@ class _ConversationPageState extends State<ConversationPage> {
   }
 
   Future<void> _startConversation(BuildContext context) async {
-    setState(() => _submitting = true);
+    final selection = await _sourceSelectionForNewConversation(context);
+    if (selection == null) return;
+    if (mounted) setState(() => _submitting = true);
     try {
       final id = await widget.controller.startConversation(
         widget.scope,
         scopeId: widget.scopeId,
-        sourceIds: _selectedSourceIdsForStart(),
+        sourceIds: selection.explicit ? selection.sourceIds : null,
       );
       if (mounted) setState(() => _selectedConversationId = id);
     } catch (error) {
@@ -210,6 +217,30 @@ class _ConversationPageState extends State<ConversationPage> {
   List<String>? _selectedSourceIdsForStart() {
     if (widget.scope == ConversationScope.item) return _sourceIds.toList();
     return _explicitSources ? _sourceIds.toList() : null;
+  }
+
+  Future<_SourceSelection?> _sourceSelectionForNewConversation(
+    BuildContext context,
+  ) async {
+    if (widget.scope == ConversationScope.item) {
+      return _SourceSelection(explicit: true, sourceIds: _sourceIds.toList());
+    }
+    final result = await showDialog<_SourceSelection>(
+      context: context,
+      builder: (_) => _SourcePickerDialog(
+        controller: widget.controller,
+        explicit: _explicitSources,
+        selectedIds: _sourceIds,
+      ),
+    );
+    if (result == null) return null;
+    if (mounted) {
+      setState(() {
+        _explicitSources = result.explicit;
+        _sourceIds = result.sourceIds.toSet();
+      });
+    }
+    return result;
   }
 
   Future<void> _chooseSources(BuildContext context) async {
@@ -700,7 +731,14 @@ class _WindowsSection extends StatelessWidget {
                 ? const AfterwordIcon(Icons.chevron_right)
                 : null,
             onTap: _hasSource(controller, window.sourceId)
-                ? () => _openSource(context, controller, window.sourceId)
+                ? () => _openSource(
+                    context,
+                    controller,
+                    window.sourceId,
+                    initialBlockId: window.blockId.trim().isEmpty
+                        ? null
+                        : window.blockId,
+                  )
                 : null,
           ),
       ],
@@ -733,7 +771,15 @@ class _EvidenceSection extends StatelessWidget {
                 ? const AfterwordIcon(Icons.chevron_right)
                 : null,
             onTap: _hasSource(controller, anchor.sourceId)
-                ? () => _openSource(context, controller, anchor.sourceId)
+                ? () => _openSource(
+                    context,
+                    controller,
+                    anchor.sourceId,
+                    initialBlockId: anchor.blockId.trim().isEmpty
+                        ? null
+                        : anchor.blockId,
+                    initialPdfPage: anchor.pdfPage,
+                  )
                 : null,
           ),
       ],
@@ -786,10 +832,16 @@ class _QuestionComposer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          keyboardOpen ? 0 : 8,
+          12,
+          keyboardOpen ? 0 : 4,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -830,15 +882,27 @@ bool _hasSource(AppController controller, String sourceId) =>
 void _openSource(
   BuildContext context,
   AppController controller,
-  String sourceId,
-) {
+  String sourceId, {
+  String? initialBlockId,
+  int? initialPdfPage,
+}) {
   final item = controller.data.items
       .where((candidate) => candidate.id == sourceId)
       .firstOrNull;
   if (item != null) {
+    if (initialPdfPage != null) {
+      controller.updateReadingPosition(sourceId, pdfPage: initialPdfPage);
+    } else if (initialBlockId != null && initialBlockId.isNotEmpty) {
+      controller.updateReadingPosition(sourceId, blockId: initialBlockId);
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ArticleDetailPage(controller: controller, item: item),
+        builder: (_) => ArticleDetailPage(
+          controller: controller,
+          item: item,
+          initialBlockId: initialBlockId,
+          initialPdfPage: initialPdfPage,
+        ),
       ),
     );
     return;

@@ -60,7 +60,7 @@ const server = http.createServer(async (req, res) => {
       const evidence = input.availableEvidence !== undefined
         ? input.availableEvidence.slice(0, 1)
         : block ? [{sourceId: input.item.id, sourceVersion: input.item.contentVersion, blockId: block.id, quote: block.text}] : [];
-      result.structuredInsights = evidence.length ? [{id: `fixture-${input.item.id}`, title: '保留来源与适用条件', finding: '原始资料是核对观点的依据。', evidence, unknowns: ['实际效果仍需验证。']}] : [];
+      result.structuredInsights = evidence.length ? [{id: `fixture-${input.item.id}`, title: '保留来源与适用条件', finding: '原始资料是核对观点的依据。', change: '将原文与个人推断分开保存。', impact: '使阅读后的判断可回到来源核对。', evidence, unknowns: ['实际效果仍需验证。']}] : [];
     } else if (text.includes('仅基于以下本地资料')) {
       counts.synthesis++;
       const input = JSON.parse(text.slice(text.lastIndexOf('\n{') + 1));

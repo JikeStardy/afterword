@@ -40,6 +40,9 @@ test('device fixture supports source summaries and preserves supplied PDF eviden
   const evidence = { sourceId: 'pdf', sourceVersion: 2, pdfPage: 1, assetFingerprint: 'fixture-fingerprint', quote: '', unresolved: true };
   const input = { item: { id: 'pdf', contentVersion: 2, contentBlocks: [] }, related: [], availableEvidence: [evidence] };
   const result = await complete(`生成观点卡片\n输入数据：${JSON.stringify(input)}`);
+  for (const field of ['finding', 'change', 'impact']) {
+    assert.ok(result.structuredInsights[0][field]?.trim(), `${field} must be populated for client validation`);
+  }
   assert.deepEqual(result.structuredInsights[0].evidence, [evidence]);
   input.availableEvidence = [];
   assert.deepEqual((await complete(`生成观点卡片\n输入数据：${JSON.stringify(input)}`)).structuredInsights, []);

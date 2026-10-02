@@ -8,6 +8,7 @@ import 'package:readlater/core/retrieval.dart';
 import 'package:readlater/core/store.dart';
 import 'package:readlater/ui/common.dart';
 import 'package:readlater/ui/conversation_page.dart';
+import 'package:readlater/ui/item_detail.dart';
 import 'package:readlater/ui/knowledge_page.dart';
 
 class _DialogueController extends AppController {
@@ -44,6 +45,7 @@ void _setSurface(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.view.resetViewInsets);
 }
 
 Widget _wrap(Widget child, {double scale = 1}) {
@@ -88,6 +90,12 @@ void main() {
               scope: ConversationScope.item,
               scopeId: 'item-1',
               sourceIds: const ['item-1'],
+            ),
+            Conversation(
+              id: 'library-history',
+              title: '旧知识库会话',
+              scope: ConversationScope.library,
+              updatedAt: DateTime(2026, 10, 2),
             ),
           ],
           conversationTurns: [
@@ -171,8 +179,12 @@ void main() {
       expect(find.text('重试'), findsOneWidget);
       expect(find.byType(LinearProgressIndicator), findsNothing);
       await tester.showKeyboard(find.byType(TextField));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
       await tester.pump();
       expect(tester.takeException(), isNull);
+      tester.testTextInput.hide();
+      tester.view.resetViewInsets();
+      await tester.pump();
 
       await tester.pumpWidget(
         _wrap(
@@ -184,8 +196,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('选择来源'));
+      expect(find.text('旧知识库会话'), findsOneWidget);
+      await tester.tap(find.byTooltip('新对话'));
       await tester.pumpAndSettle();
+      expect(find.text('选择对话来源'), findsOneWidget);
       expect(find.text('已排除 1 个归档或回收站资料。'), findsOneWidget);
       expect(find.text('归档资料'), findsNothing);
       await tester.tap(find.byType(Switch));
@@ -193,8 +207,6 @@ void main() {
       await tester.tap(find.text('长资料'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('确定'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(OutlinedButton, '开始对话'));
       await tester.pumpAndSettle();
 
       expect(
@@ -204,6 +216,121 @@ void main() {
       expect(controller.data.conversations.last.sourceIds, ['item-1']);
     },
   );
+
+  testWidgets('conversation evidence opens original source position', (
+    tester,
+  ) async {
+    _setSurface(tester, width: 360, height: 800);
+    final textItem = LibraryItem(
+      id: 'text-source',
+      title: '段落资料',
+      kind: ItemKind.text,
+      analysis: Analysis(summary: '已有分析不应成为初始页签'),
+      contentBlocks: [
+        ContentBlock(
+          id: 'intro',
+          kind: ContentBlockKind.paragraph,
+          text: '开头段落',
+        ),
+        ContentBlock(
+          id: 'target-block',
+          kind: ContentBlockKind.paragraph,
+          text: '需要定位的原文段落',
+        ),
+      ],
+    );
+    final pdfItem = LibraryItem(
+      id: 'pdf-source',
+      title: 'PDF资料',
+      kind: ItemKind.pdf,
+      assets: [
+        Asset(
+          path: '/tmp/missing.pdf',
+          name: 'missing.pdf',
+          mime: 'application/pdf',
+        ),
+      ],
+      analysis: Analysis(summary: 'PDF已有分析不应优先打开'),
+      pdfPageCount: 5,
+    );
+    final controller = _controller(
+      AppData(
+        items: [textItem, pdfItem],
+        conversations: [
+          Conversation(
+            id: 'conversation-1',
+            title: '定位对话',
+            scope: ConversationScope.library,
+          ),
+        ],
+        conversationTurns: [
+          ConversationTurn(
+            id: 'turn-1',
+            conversationId: 'conversation-1',
+            question: '定位证据',
+            status: 'completed',
+            answer: '请查看原文位置。',
+            windows: [
+              SourceWindow(
+                id: 'window-1',
+                sourceId: 'text-source',
+                sourceVersion: 1,
+                blockId: 'target-block',
+                start: 0,
+                end: 8,
+                text: '需要定位的原文段落',
+                fingerprint: 'window-fp',
+              ),
+            ],
+            evidence: [
+              EvidenceAnchor(
+                sourceId: 'pdf-source',
+                blockId: 'pdf-page-3',
+                pdfPage: 3,
+                quote: 'PDF第三页证据',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        ConversationPage(
+          controller: controller,
+          scope: ConversationScope.library,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('读取窗口 · 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('段落资料'));
+    await tester.pumpAndSettle();
+    final textPage = tester.widget<ArticleDetailPage>(
+      find.byType(ArticleDetailPage),
+    );
+    expect(textPage.initialBlockId, 'target-block');
+    expect(textPage.initialPdfPage, isNull);
+
+    Navigator.of(tester.element(find.byType(ArticleDetailPage))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('证据 · 1'));
+    await tester.pumpAndSettle();
+    final pdfTile = find.ancestor(
+      of: find.text('PDF资料'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(pdfTile);
+    await tester.pumpAndSettle();
+    final pdfPage = tester.widget<ArticleDetailPage>(
+      find.byType(ArticleDetailPage),
+    );
+    expect(pdfPage.initialBlockId, 'pdf-page-3');
+    expect(pdfPage.initialPdfPage, 3);
+  });
 
   testWidgets('knowledge proposal can be edited, accepted and rejected', (
     tester,
