@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'item_detail.dart';
+import 'conversation_page.dart';
+import 'knowledge_page.dart';
 import 'library_page.dart';
 import 'research_detail.dart';
 import 'research_page.dart';
@@ -135,6 +137,39 @@ class _ReadlaterShellState extends State<ReadlaterShell> {
   void _openNavigation(BuildContext context, Map<String, String> navigation) {
     final type = navigation['entityType'] ?? '';
     final id = navigation['entityId'] ?? '';
+    if (type == 'conversation') {
+      final turn = widget.controller.data.conversationTurns
+          .where((t) => t.id == id)
+          .firstOrNull;
+      final conversation = widget.controller.data.conversations
+          .where((c) => c.id == turn?.conversationId)
+          .firstOrNull;
+      setState(() => _index = 3);
+      if (conversation != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ConversationPage(
+              controller: widget.controller,
+              initialConversationId: conversation.id,
+              scope: conversation.scope,
+              scopeId: conversation.scopeId,
+              sourceIds: conversation.sourceIds ?? [],
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (type == 'knowledge') {
+      setState(() => _index = 3);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              KnowledgePage(controller: widget.controller, topicId: id),
+        ),
+      );
+      return;
+    }
     if (type == 'today') {
       setState(() => _index = 0);
       return;

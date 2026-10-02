@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'common.dart';
+import 'conversation_page.dart';
 import 'research_dialogs.dart';
 import 'research_detail.dart';
 import 'afterword_art.dart';
@@ -20,6 +21,20 @@ class ResearchPage extends StatelessWidget {
     return AppFrame(
       title: '研究',
       actions: [
+        IconButton(
+          tooltip: '问知识库',
+          icon: const AfterwordIcon(Icons.question_answer_outlined),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ConversationPage(
+                controller: controller,
+                scope: ConversationScope.library,
+                sourceIds: data.items.map((item) => item.id).toList(),
+                title: '问知识库',
+              ),
+            ),
+          ),
+        ),
         IconButton(
           tooltip: '单次研究',
           icon: const AfterwordIcon(Icons.travel_explore),

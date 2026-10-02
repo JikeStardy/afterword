@@ -98,7 +98,12 @@ extension TaskController on AppController {
     data.settings.searchEndpoint,
   ]);
 
-  BackgroundJob _enqueue(String type, String entityId, {Json? checkpoint}) {
+  BackgroundJob _enqueue(
+    String type,
+    String entityId, {
+    Json? checkpoint,
+    String lane = 'background',
+  }) {
     final existing = runtime.jobs
         .where(
           (job) =>
@@ -113,6 +118,7 @@ extension TaskController on AppController {
       type: type,
       entityId: entityId,
       epoch: runtime.epoch,
+      lane: lane,
       checkpoint: {'configuration': _configurationSignature(), ...?checkpoint},
     );
     runtime.jobs.add(job);
@@ -120,23 +126,35 @@ extension TaskController on AppController {
   }
 
   void _scheduleQueue() {
-    if (_digestOnly || _disposed || _queueFuture != null) return;
-    if (!runtime.jobs.any((job) => job.status == 'queued')) return;
-    // Do not inherit a capture's diagnostic zone: each durable job owns its scope.
-    _queueFuture = Zone.root.run(() => Future<void>(_drainQueue));
-    unawaited(
-      _queueFuture!.catchError((Object error, StackTrace stack) {
-        if (!_disposed) {
-          lastError = '后台任务暂停：${diagnostics.sanitize(error.toString())}';
-          _emit();
-        }
-      }),
-    );
+    if (_digestOnly || _disposed) return;
+    for (final lane in ['background', 'interactive']) {
+      final running = lane == 'background'
+          ? _queueFuture
+          : _conversationQueueFuture;
+      if (running != null ||
+          !runtime.jobs.any((j) => j.status == 'queued' && j.lane == lane)) {
+        continue;
+      }
+      final future = Zone.root.run(() => Future<void>(() => _drainQueue(lane)));
+      if (lane == 'background') {
+        _queueFuture = future;
+      } else {
+        _conversationQueueFuture = future;
+      }
+      unawaited(
+        future.catchError((Object error, StackTrace stack) {
+          if (!_disposed) {
+            lastError = '任务暂停：${diagnostics.sanitize(error.toString())}';
+            _emit();
+          }
+        }),
+      );
+    }
   }
 
   Future<void> waitForIdle() async {
-    while (_queueFuture != null) {
-      await _queueFuture;
+    while (_queueFuture != null || _conversationQueueFuture != null) {
+      await Future.wait([?_queueFuture, ?_conversationQueueFuture]);
     }
   }
 
@@ -144,17 +162,20 @@ extension TaskController on AppController {
       !_disposed &&
       job.epoch == runtime.epoch &&
       job.status == 'running' &&
-      identical(_currentJob, job);
+      identical(_runningJobs[job.id]?.job, job) &&
+      !_runningJobs[job.id]!.cancelled.isCompleted;
 
   bool _preflightJob(BackgroundJob job) {
     String? error;
-    if (job.version != 1 ||
+    if (!const {1, 2}.contains(job.version) ||
         !const {
           'capture',
           'fetch',
           'analysis',
           'synthesis',
           'research',
+          'conversation',
+          'knowledgeProposal',
         }.contains(job.type)) {
       error = '任务版本或类型不受支持，请重新提交';
     } else if (job.checkpoint['sourceReplaced'] == true) {
@@ -176,6 +197,7 @@ extension TaskController on AppController {
     job.status = 'paused';
     job.error = error;
     job.checkpoint['requiresAttention'] = true;
+    _markConversationFailure(job, error);
     _save();
     return false;
   }
@@ -183,6 +205,7 @@ extension TaskController on AppController {
   Future<void> _stopServiceIfIdle({bool force = false}) async {
     if (_active != 0 ||
         _queueFuture != null ||
+        _conversationQueueFuture != null ||
         (!force && !_serviceStarted) ||
         runtime.jobs.any((job) => ['queued', 'running'].contains(job.status))) {
       return;
@@ -211,10 +234,12 @@ extension TaskController on AppController {
     }
   }
 
-  Future<void> _drainQueue() async {
+  Future<void> _drainQueue(String lane) async {
     try {
       while (!_disposed && !_digestOnly) {
-        final queued = runtime.jobs.where((j) => j.status == 'queued');
+        final queued = runtime.jobs.where(
+          (j) => j.status == 'queued' && j.lane == lane,
+        );
         final job =
             queued.where((j) => j.checkpoint['tracking'] != true).firstOrNull ??
             queued.firstOrNull;
@@ -225,132 +250,23 @@ extension TaskController on AppController {
           continue;
         }
         if (!_preflightJob(job)) continue;
-        _currentJob = job;
-        job.status = 'running';
-        job.error = '';
-        job.attempts++;
-        _save();
-        try {
-          await _startUserWork();
-          await _publishProgress(job);
-          await _work(
-            () async {
-              switch (job.type) {
-                case 'capture':
-                case 'fetch':
-                case 'analysis':
-                  final item = _item(job.entityId);
-                  _requireActive(item);
-                  if (job.type != 'analysis' &&
-                      job.checkpoint['fetched'] != true) {
-                    await _fetch(item);
-                    if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
-                    if (item.status == 'failed') throw StateError(item.error);
-                    job.checkpoint['fetched'] = true;
-                    _save();
-                  }
-                  if (job.type != 'fetch' &&
-                      job.checkpoint['analyzed'] != true) {
-                    await analyze(item.id);
-                    if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
-                    if (item.status == 'waiting') {
-                      job.status = 'paused';
-                      job.error = item.error;
-                    } else if (item.status != 'ready') {
-                      throw StateError(
-                        item.error.isEmpty ? '分析尚未完成' : item.error,
-                      );
-                    }
-                  }
-                  if (job.type != 'fetch' &&
-                      job.checkpoint['analyzed'] == true &&
-                      job.checkpoint['topicsUpdated'] != true) {
-                    await _updateInterests(item);
-                    _saveCheckpoint('主题更新完成', {'topicsUpdated': true});
-                  }
-                case 'synthesis':
-                  await synthesizeTopic(job.entityId);
-                  final topic = _topic(job.entityId);
-                  if (topic.status != 'ready') throw StateError(topic.error);
-                case 'research':
-                  final run = data.runs.firstWhere(
-                    (run) => run.id == job.entityId,
-                  );
-                  final topic = run.topicId == null
-                      ? null
-                      : _topic(run.topicId!);
-                  if (!_reusable(run.inputItemIds)) throw StateError('研究来源已失效');
-                  await _executeResearch(
-                    goal: run.goal,
-                    topic: topic,
-                    callLimit: run.callLimit,
-                    originInputs: run.inputItemIds!.toSet(),
-                    existingRun: run,
-                    authorized: () =>
-                        _jobIsCurrent(job) &&
-                        (job.checkpoint['tracking'] != true ||
-                            (topic != null &&
-                                topic.tracking &&
-                                topic.authorizedScope == run.goal)),
-                  );
-                  final saved = data.runs.firstWhere((r) => r.id == run.id);
-                  if (saved.status == 'failed' || saved.status == 'paused') {
-                    throw StateError(
-                      saved.error.isEmpty ? '研究已暂停' : saved.error,
-                    );
-                  }
-                  if (topic != null && job.checkpoint['tracking'] == true) {
-                    topic.lastRun = DateTime.now();
-                    topic.nextRun = DateTime.now().add(
-                      Duration(hours: topic.intervalHours),
-                    );
-                    topic.status = saved.status;
-                    if (saved.meaningful) _queueResearchNotice(topic, saved);
-                  }
-              }
-            },
-            type: job.type,
-            title: '后台${_jobTitle(job)}',
-            entityId: job.entityId,
-            authorized: () => _jobIsCurrent(job),
-          );
-          if (_jobIsCurrent(job)) {
-            job.status = 'complete';
-            job.stage = '完成';
-            _queueTaskNotice(job, success: true);
-          }
-        } on DiagnosticCancelled {
-          if (job.status == 'running') job.status = 'cancelled';
-        } catch (error) {
-          if (_jobIsCurrent(job)) {
-            job.error = diagnostics.sanitize(error.toString()).toString();
-            final transient = RegExp(
-              r'\b(408|429|500|502|503|504)\b|SocketException|TimeoutException|网络超时',
-            ).hasMatch(job.error);
-            if (transient && job.attempts < 3) {
-              await Future<void>.delayed(
-                Duration(milliseconds: 400 << (job.attempts - 1)),
-              );
-              if (_jobIsCurrent(job)) job.status = 'queued';
-            } else {
-              job.status = 'paused';
-              job.checkpoint['requiresAttention'] = true;
-              _queueTaskNotice(job, success: false);
-            }
-          }
-        } finally {
-          if (!_disposed) {
-            job.updatedAt = DateTime.now();
-            _save();
-            await _flushNotifications();
-          }
-          _currentJob = null;
-        }
+        final context = JobExecutionContext(job);
+        _runningJobs[job.id] = context;
+        await runZoned(
+          () => _executeQueuedJob(job),
+          zoneValues: {
+            _jobContextKey: context,
+            IntelligenceService.requestAbortKey: context.cancelled.future,
+          },
+        );
       }
     } finally {
-      _currentJob = null;
       if (!_disposed) {
-        _queueFuture = null;
+        if (lane == 'background') {
+          _queueFuture = null;
+        } else {
+          _conversationQueueFuture = null;
+        }
         try {
           await _stopServiceIfIdle();
         } finally {
@@ -358,12 +274,140 @@ extension TaskController on AppController {
         }
         if (runtime.jobs.any((job) => job.status == 'queued')) _scheduleQueue();
       } else {
-        _queueFuture = null;
+        if (lane == 'background') {
+          _queueFuture = null;
+        } else {
+          _conversationQueueFuture = null;
+        }
       }
     }
   }
 
+  Future<void> _executeQueuedJob(BackgroundJob job) async {
+    job.status = 'running';
+    job.error = '';
+    job.attempts++;
+    _save();
+    try {
+      await _startUserWork();
+      await _publishProgress(job);
+      await _work(
+        () async {
+          switch (job.type) {
+            case 'capture':
+            case 'fetch':
+            case 'analysis':
+              final item = _item(job.entityId);
+              _requireActive(item);
+              if (job.type != 'analysis' && job.checkpoint['fetched'] != true) {
+                await _fetch(item);
+                if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
+                if (item.status == 'failed') throw StateError(item.error);
+                job.checkpoint['fetched'] = true;
+                _save();
+              }
+              if (job.type != 'fetch' && job.checkpoint['analyzed'] != true) {
+                await analyze(item.id);
+                if (!_jobIsCurrent(job)) throw const DiagnosticCancelled();
+                if (item.status == 'waiting') {
+                  job.status = 'paused';
+                  job.error = item.error;
+                } else if (item.status != 'ready') {
+                  throw StateError(item.error.isEmpty ? '分析尚未完成' : item.error);
+                }
+              }
+              if (job.type != 'fetch' &&
+                  job.checkpoint['analyzed'] == true &&
+                  job.checkpoint['topicsUpdated'] != true) {
+                await _updateInterests(item);
+                _saveCheckpoint('主题更新完成', {'topicsUpdated': true});
+              }
+            case 'conversation':
+              await _executeConversationTurn(job.entityId);
+            case 'knowledgeProposal':
+              await _executeKnowledgeProposal(job.entityId);
+            case 'synthesis':
+              await synthesizeTopic(job.entityId);
+              final topic = _topic(job.entityId);
+              if (topic.status != 'ready') throw StateError(topic.error);
+            case 'research':
+              final run = data.runs.firstWhere((run) => run.id == job.entityId);
+              final topic = run.topicId == null ? null : _topic(run.topicId!);
+              if (!_reusable(run.inputItemIds)) throw StateError('研究来源已失效');
+              await _executeResearch(
+                goal: run.goal,
+                topic: topic,
+                callLimit: run.callLimit,
+                originInputs: run.inputItemIds!.toSet(),
+                existingRun: run,
+                authorized: () =>
+                    _jobIsCurrent(job) &&
+                    (job.checkpoint['tracking'] != true ||
+                        (topic != null &&
+                            topic.tracking &&
+                            topic.authorizedScope == run.goal)),
+              );
+              final saved = data.runs.firstWhere((r) => r.id == run.id);
+              if (saved.status == 'failed' || saved.status == 'paused') {
+                throw StateError(saved.error.isEmpty ? '研究已暂停' : saved.error);
+              }
+              if (topic != null && job.checkpoint['tracking'] == true) {
+                topic.lastRun = DateTime.now();
+                topic.nextRun = DateTime.now().add(
+                  Duration(hours: topic.intervalHours),
+                );
+                topic.status = saved.status;
+                if (saved.meaningful) _queueResearchNotice(topic, saved);
+              }
+          }
+        },
+        type: job.type,
+        title: '后台${_jobTitle(job)}',
+        entityId: job.entityId,
+        authorized: () => _jobIsCurrent(job),
+      );
+      if (_jobIsCurrent(job)) {
+        job.status = 'complete';
+        job.stage = '完成';
+        _queueTaskNotice(job, success: true);
+      }
+    } on DiagnosticCancelled {
+      if (job.status == 'running') {
+        job.status = 'cancelled';
+        job.error = '来源或配置已变化，本轮停止';
+      }
+      _markJobInterrupted(job);
+    } catch (error) {
+      if (_jobIsCurrent(job)) {
+        job.error = diagnostics.sanitize(error.toString()).toString();
+        final transient = RegExp(
+          r'\b(408|429|500|502|503|504)\b|SocketException|TimeoutException|网络超时',
+        ).hasMatch(job.error);
+        if (job.type != 'conversation' && transient && job.attempts < 3) {
+          await Future<void>.delayed(
+            Duration(milliseconds: 400 << (job.attempts - 1)),
+          );
+          if (_jobIsCurrent(job)) job.status = 'queued';
+        } else {
+          job.status = 'paused';
+          _markConversationFailure(job, job.error);
+          job.checkpoint['requiresAttention'] = true;
+          _queueTaskNotice(job, success: false);
+        }
+      }
+    } finally {
+      if (!_disposed) {
+        job.updatedAt = DateTime.now();
+        _save();
+        await _flushNotifications();
+      }
+      _runningJobs.remove(job.id);
+    }
+  }
+
   String _jobTitle(BackgroundJob job) => switch (job.type) {
+    'conversation' => '知识对话',
+    'knowledgeProposal' => '知识更新建议',
     'research' => '研究',
     'synthesis' => '主题更新',
     'fetch' => '抓取',
@@ -466,7 +510,7 @@ extension TaskController on AppController {
     job.status = 'cancelled';
     job.error = '用户已取消';
     _markJobInterrupted(job);
-    if (identical(job, _currentJob)) _lifecycleRevision++;
+    _runningJobs[job.id]?.cancel();
     final item = data.items.where((i) => i.id == job.entityId).firstOrNull;
     if (item != null && ['analyzing', 'pending'].contains(item.status)) {
       item.status = 'interrupted';
@@ -483,6 +527,9 @@ extension TaskController on AppController {
       data: {'cancelled': cancelled, 'pending': pendingJobs.length},
     );
     _lifecycleRevision++;
+    for (final context in _runningJobs.values) {
+      context.cancel();
+    }
     for (final job in pendingJobs) {
       job.status = cancelled ? 'cancelled' : 'paused';
       job.error = cancelled ? '用户已取消' : '系统暂停，重新打开后继续';
@@ -503,6 +550,13 @@ extension TaskController on AppController {
   }
 
   void _markJobInterrupted(BackgroundJob job) {
+    final turn = data.conversationTurns
+        .where((t) => t.id == job.entityId)
+        .firstOrNull;
+    if (turn != null && ['queued', 'running', 'paused'].contains(turn.status)) {
+      turn.status = job.status == 'cancelled' ? 'cancelled' : 'interrupted';
+      turn.error = job.error;
+    }
     final run = data.runs.where((run) => run.id == job.entityId).firstOrNull;
     if (run != null) {
       run.status = 'interrupted';
@@ -526,12 +580,20 @@ extension TaskController on AppController {
       data: {'jobs': runtime.jobs.length},
     );
     for (final job in runtime.jobs) {
+      if (job.type == 'conversation' &&
+          ['running', 'paused'].contains(job.status) &&
+          !_runningJobs.containsKey(job.id)) {
+        job.status = 'paused';
+        job.checkpoint['requiresAttention'] = true;
+        _markJobInterrupted(job);
+        continue;
+      }
       if (job.epoch != runtime.epoch ||
           job.checkpoint['requiresAttention'] == true) {
         continue;
       }
       if (['running', 'paused'].contains(job.status) &&
-          !identical(job, _currentJob)) {
+          !_runningJobs.containsKey(job.id)) {
         if (job.checkpoint['inputIds'] case final List inputs) {
           if (!_reusable(inputs.whereType<String>().toList())) {
             job.status = 'cancelled';
@@ -582,7 +644,11 @@ extension TaskController on AppController {
         channel: 'results',
         title: success ? '${_jobTitle(job)}已完成' : '${_jobTitle(job)}需要处理',
         body: success ? '点击查看结果' : job.error,
-        entityType: job.type == 'research'
+        entityType: job.type == 'conversation'
+            ? 'conversation'
+            : job.type == 'knowledgeProposal'
+            ? 'knowledge'
+            : job.type == 'research'
             ? 'run'
             : job.type == 'synthesis'
             ? 'topic'
@@ -607,6 +673,10 @@ extension TaskController on AppController {
           entry.channel == 'digest' &&
           entry.id != 'digest:${_localDay(DateTime.now())}';
       final sourceExcluded = switch (entry.entityType) {
+        'conversation' => !data.conversationTurns.any(
+          (t) => t.id == entry.entityId && _reusable(t.inputItemIds),
+        ),
+        'knowledge' => !data.topics.any((t) => t.id == entry.entityId),
         'item' => !data.items.any(
           (item) => item.id == entry.entityId && item.isActive,
         ),

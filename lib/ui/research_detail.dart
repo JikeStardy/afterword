@@ -7,8 +7,10 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import '../services/knowledge_service.dart';
 import 'common.dart';
+import 'conversation_page.dart';
 import 'developer_page.dart';
 import 'item_detail.dart';
+import 'knowledge_page.dart';
 import 'reading_content.dart';
 import 'research_dialogs.dart';
 import 'afterword_art.dart';
@@ -51,6 +53,31 @@ class TopicDetailPage extends StatelessWidget {
       title: topic.title,
       actions: [
         IconButton(
+          tooltip: '围绕主题讨论',
+          icon: const AfterwordIcon(Icons.question_answer_outlined),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ConversationPage(
+                controller: controller,
+                scope: ConversationScope.topic,
+                scopeId: topic.id,
+                sourceIds: topic.sourceIds,
+                title: '围绕主题讨论',
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: '知识草稿',
+          icon: const AfterwordIcon(Icons.library_add_check_outlined),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  KnowledgePage(controller: controller, topicId: topic.id),
+            ),
+          ),
+        ),
+        IconButton(
           tooltip: '编辑主题',
           icon: const AfterwordIcon(Icons.edit_outlined),
           onPressed: () => _editTopic(context, topic),
@@ -83,6 +110,7 @@ class TopicDetailPage extends StatelessWidget {
             controller: controller,
             sourceContext: sourceContext,
           ),
+          KnowledgePanel(controller: controller, topic: topic),
           _TopicContextCard(topic: topic, controller: controller),
           _TopicScopeCard(topic: topic, controller: controller),
           if (topic.error.isNotEmpty)

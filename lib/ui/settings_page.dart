@@ -24,6 +24,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _endpoint;
   late final TextEditingController _textModel;
   late final TextEditingController _visionModel;
+  late final TextEditingController _conversationCallLimit;
+  late final TextEditingController _modelTextContextChars;
   late final TextEditingController _apiKey;
   late final TextEditingController _searchEndpoint;
   late final TextEditingController _searchKey;
@@ -38,6 +40,12 @@ class _SettingsPageState extends State<SettingsPage> {
     _endpoint = TextEditingController(text: settings.endpoint);
     _textModel = TextEditingController(text: settings.textModel);
     _visionModel = TextEditingController(text: settings.visionModel);
+    _conversationCallLimit = TextEditingController(
+      text: '${settings.conversationCallLimit}',
+    );
+    _modelTextContextChars = TextEditingController(
+      text: '${settings.modelTextContextChars}',
+    );
     _apiKey = TextEditingController();
     _searchEndpoint = TextEditingController(text: settings.searchEndpoint);
     _searchKey = TextEditingController();
@@ -56,6 +64,8 @@ class _SettingsPageState extends State<SettingsPage> {
       _endpoint,
       _textModel,
       _visionModel,
+      _conversationCallLimit,
+      _modelTextContextChars,
       _apiKey,
       _searchEndpoint,
       _searchKey,
@@ -211,6 +221,24 @@ class _SettingsPageState extends State<SettingsPage> {
                 TextField(
                   controller: _visionModel,
                   decoration: const InputDecoration(labelText: '多模态模型'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _conversationCallLimit,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '对话调用上限',
+                    helperText: '1–20 次；停止/重试会保留已用次数。',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _modelTextContextChars,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '单次模型文本预算',
+                    helperText: '8000–64000 字符，用于长资料分段读取。',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -406,6 +434,12 @@ class _SettingsPageState extends State<SettingsPage> {
       'endpoint': _endpoint.text.trim(),
       'textModel': _textModel.text.trim(),
       'visionModel': _visionModel.text.trim(),
+      'conversationCallLimit':
+          int.tryParse(_conversationCallLimit.text.trim()) ??
+          widget.controller.data.settings.conversationCallLimit,
+      'modelTextContextChars':
+          int.tryParse(_modelTextContextChars.text.trim()) ??
+          widget.controller.data.settings.modelTextContextChars,
       'searchEndpoint': _searchEndpoint.text.trim(),
       'customInstructions': _instructions.text.trim(),
       'explicitInterests': _lines(_explicit.text),
@@ -531,6 +565,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _endpoint.text = settings.endpoint;
     _textModel.text = settings.textModel;
     _visionModel.text = settings.visionModel;
+    _conversationCallLimit.text = '${settings.conversationCallLimit}';
+    _modelTextContextChars.text = '${settings.modelTextContextChars}';
     _searchEndpoint.text = settings.searchEndpoint;
     _instructions.text = settings.customInstructions;
     _explicit.text = settings.explicitInterests.join('\n');

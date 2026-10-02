@@ -305,31 +305,27 @@ void main() {
       expect(item.assets, isEmpty);
     },
   );
-  test(
-    'long text segments retain explicit feedback and attention signals',
-    () async {
-      controller.dispose();
-      final inputs = <Map<String, dynamic>>[];
-      controller = AppController(
-        store: LocalStore(dir.path),
-        secrets: TestSecrets(),
-        intelligence: IntelligenceService(
-          client: MockClient((request) async {
-            final prompt =
-                jsonDecode(request.body)['messages'][1]['content'] as String;
-            final input =
-                jsonDecode(prompt.split('输入数据：').last) as Map<String, dynamic>;
-            inputs.add(input['item'] as Map<String, dynamic>);
+  test('neutral long text segments exclude preferences while final analysis retains feedback', () async {
+    controller.dispose();
+    final inputs = <Map<String, dynamic>>[];
+    final segments = <Map<String, dynamic>>[];
+    controller = AppController(
+      store: LocalStore(dir.path),
+      secrets: TestSecrets(),
+      intelligence: IntelligenceService(
+        client: MockClient((request) async {
+          final prompt =
+              jsonDecode(request.body)['messages'][1]['content'] as String;
+          final input =
+              jsonDecode(prompt.split('输入数据：').last) as Map<String, dynamic>;
+          if (input['task'] != null) {
+            segments.add(input);
             return http.Response(
               jsonEncode({
                 'choices': [
                   {
                     'message': {
-                      'content': jsonEncode({
-                        'summary': '分段认识',
-                        'insights': ['保留适用条件'],
-                        'sourceIds': [input['item']['id']],
-                      }),
+                      'content': jsonEncode({'summary': '中立摘要'}),
                     },
                   },
                 ],
@@ -337,29 +333,58 @@ void main() {
               200,
               headers: {'content-type': 'application/json; charset=utf-8'},
             );
-          }),
-        ),
-      );
-      await controller.initialize();
-      final item = await controller.captureText(List.filled(25001, '文').join());
-      await controller.waitForIdle();
-      await controller.markRead(item.id);
-      await controller.markRead(item.id);
-      await controller.setFeedback(item.id, -1);
-      item.researchAdoptions = 1;
-      await controller.saveSettings(AppSettings(textModel: 'm'), apiKey: 'key');
-      await controller.analyze(item.id);
-      expect(item.status, 'ready');
-      expect(inputs.length, 3);
-      for (final input in inputs) {
-        expect(input['feedback'], -1);
-        expect(input['attentionNotAgreement'], {
-          'reads': 2,
-          'researchAdoptions': 1,
-        });
-      }
-    },
-  );
+          }
+          inputs.add(input['item'] as Map<String, dynamic>);
+          return http.Response(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {
+                    'content': jsonEncode({
+                      'summary': '分段认识',
+                      'insights': ['保留适用条件'],
+                      'sourceIds': [input['item']['id']],
+                    }),
+                  },
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      ),
+    );
+    await controller.initialize();
+    final item = await controller.captureText(List.filled(25001, '文').join());
+    await controller.waitForIdle();
+    await controller.markRead(item.id);
+    await controller.markRead(item.id);
+    await controller.setFeedback(item.id, -1);
+    item.researchAdoptions = 1;
+    await controller.saveSettings(AppSettings(textModel: 'm'), apiKey: 'key');
+    await controller.analyze(item.id);
+    expect(item.status, 'ready');
+    expect(inputs.length, 1);
+    expect(segments.length, greaterThan(1));
+    expect(
+      segments.every(
+        (s) =>
+            !s.containsKey('preferences') &&
+            !s.containsKey('related') &&
+            !s.containsKey('notes'),
+      ),
+      isTrue,
+    );
+    expect(item.body.length, 25001);
+    for (final input in inputs) {
+      expect(input['feedback'], -1);
+      expect(input['attentionNotAgreement'], {
+        'reads': 2,
+        'researchAdoptions': 1,
+      });
+    }
+  });
   test('saved research evidence participates in later analysis and topic synthesis', () async {
     controller.dispose();
     final prompts = <String>[];
@@ -424,10 +449,17 @@ void main() {
     expect(topic.status, 'ready');
     expect(topic.sourceIds, contains('r1'));
     expect(
-      prompts.every((p) => p.contains('https://example.com/evidence')),
+      prompts
+          .where((p) => p.contains('生成观点卡片') || p.contains('仅基于以下本地资料'))
+          .every((p) => p.contains('https://example.com/evidence')),
       isTrue,
     );
-    expect(prompts.every((p) => p.contains('方法的约束条件')), isTrue);
+    expect(
+      prompts
+          .where((p) => p.contains('生成观点卡片') || p.contains('仅基于以下本地资料'))
+          .every((p) => p.contains('方法的约束条件')),
+      isTrue,
+    );
   });
   test(
     'dismissing an error removes it without discarding research notices',

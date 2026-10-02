@@ -267,6 +267,21 @@ class NativeBridge {
     }
   }
 
+  Future<String> normalizeImage(String path) async {
+    try {
+      final result = await _channel.invokeMethod<String>(
+        'normalizeImage',
+        <String, Object?>{'path': path},
+      );
+      if (result == null || result.trim().isEmpty) {
+        throw const FormatException('图片归一化结果为空');
+      }
+      return result;
+    } on MissingPluginException {
+      throw UnsupportedError('当前平台不支持图片归一化');
+    }
+  }
+
   Future<void> notify(String title, String body) async {
     try {
       await _channel.invokeMethod<void>('notify', <String, Object?>{

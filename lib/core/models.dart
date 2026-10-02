@@ -1,5 +1,7 @@
 import 'dart:math';
 
+part 'knowledge_models.dart';
+
 typedef Json = Map<String, dynamic>;
 String newId() =>
     '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}${Random.secure().nextInt(1 << 32).toRadixString(36)}';
@@ -144,12 +146,15 @@ class ReadingPosition {
 
 class EvidenceAnchor {
   String sourceId, blockId, quote, note;
+  String? windowId, assetFingerprint;
   int? sourceVersion, start, end, pdfPage;
   bool unresolved;
   EvidenceAnchor({
     this.sourceId = '',
     this.sourceVersion,
     this.blockId = '',
+    this.windowId,
+    this.assetFingerprint,
     this.start,
     this.end,
     this.pdfPage,
@@ -161,6 +166,8 @@ class EvidenceAnchor {
     'sourceId': sourceId,
     'sourceVersion': sourceVersion,
     'blockId': blockId,
+    'windowId': windowId,
+    'assetFingerprint': assetFingerprint,
     'start': start,
     'end': end,
     'pdfPage': pdfPage,
@@ -172,6 +179,8 @@ class EvidenceAnchor {
     sourceId: j['sourceId'] as String? ?? '',
     sourceVersion: j['sourceVersion'] as int?,
     blockId: j['blockId'] as String? ?? '',
+    windowId: j['windowId'] as String?,
+    assetFingerprint: j['assetFingerprint'] as String?,
     start: j['start'] as int?,
     end: j['end'] as int?,
     pdfPage: j['pdfPage'] as int?,
@@ -578,6 +587,7 @@ class ContextEntry {
 
 class Topic {
   String id, title, question, overview, reason, status, error, authorizedScope;
+  String? currentKnowledgeRevisionId;
   List<String> sourceIds;
   List<String>? inputItemIds;
   List<String>? selectedSourceIds, selectedContextIds;
@@ -596,6 +606,7 @@ class Topic {
     this.status = 'idle',
     this.error = '',
     this.authorizedScope = '',
+    this.currentKnowledgeRevisionId,
     List<String>? sourceIds,
     this.inputItemIds,
     this.selectedSourceIds,
@@ -622,6 +633,7 @@ class Topic {
     'status': status,
     'error': error,
     'authorizedScope': authorizedScope,
+    'currentKnowledgeRevisionId': currentKnowledgeRevisionId,
     'sourceIds': sourceIds,
     'inputItemIds': inputItemIds,
     'selectedSourceIds': selectedSourceIds,
@@ -647,6 +659,7 @@ class Topic {
     status: j['status'] as String? ?? 'idle',
     error: j['error'] as String? ?? '',
     authorizedScope: j['authorizedScope'] as String? ?? '',
+    currentKnowledgeRevisionId: j['currentKnowledgeRevisionId'] as String?,
     sourceIds: strings(j['sourceIds']),
     inputItemIds: j['inputItemIds'] == null ? null : strings(j['inputItemIds']),
     selectedSourceIds: j['selectedSourceIds'] != null
@@ -903,6 +916,7 @@ class TodaySnapshot {
 
 class BackgroundJob {
   String id, type, entityId, status, stage, error;
+  String lane;
   Json checkpoint;
   int epoch, attempts, version;
   DateTime createdAt, updatedAt;
@@ -912,9 +926,10 @@ class BackgroundJob {
     required this.entityId,
     this.status = 'queued',
     this.stage = 'queued',
+    this.lane = 'background',
     Json? checkpoint,
     this.epoch = 0,
-    this.version = 1,
+    this.version = 2,
     this.attempts = 0,
     this.error = '',
     DateTime? createdAt,
@@ -928,6 +943,7 @@ class BackgroundJob {
     'entityId': entityId,
     'status': status,
     'stage': stage,
+    'lane': lane,
     'checkpoint': checkpoint,
     'epoch': epoch,
     'version': version,
@@ -942,6 +958,7 @@ class BackgroundJob {
     entityId: j['entityId'] as String? ?? '',
     status: j['status'] as String? ?? 'queued',
     stage: j['stage'] as String? ?? 'queued',
+    lane: j['lane'] as String? ?? 'background',
     checkpoint: json(j['checkpoint'] ?? {}),
     epoch: j['epoch'] as int? ?? 0,
     version: j['version'] as int? ?? 1,
@@ -999,13 +1016,15 @@ class RuntimeState {
   }) : jobs = jobs ?? [],
        outbox = outbox ?? [];
   Json toJson() => {
-    'version': 1,
+    'version': 2,
     'epoch': epoch,
     'jobs': jobs.map((j) => j.toJson()).toList(),
     'outbox': outbox.map((n) => n.toJson()).toList(),
   };
   factory RuntimeState.fromJson(Json j) {
-    if (j['version'] != 1) throw const FormatException('不支持的后台任务数据版本');
+    if (j['version'] != 1 && j['version'] != 2) {
+      throw const FormatException('不支持的后台任务数据版本');
+    }
     return RuntimeState(
       epoch: j['epoch'] as int? ?? 0,
       jobs: (j['jobs'] as List? ?? [])
@@ -1027,6 +1046,7 @@ class AppSettings {
   bool researchNotifications;
   ReadingPreset readingPreset;
   int digestHour, digestMinute;
+  int conversationCallLimit, modelTextContextChars;
   int _trashRetentionDays;
   int get trashRetentionDays => _trashRetentionDays;
   set trashRetentionDays(int value) {
@@ -1036,6 +1056,28 @@ class AppSettings {
   static int _validRetention(int value) {
     if (value != 3 && value != 7) {
       throw ArgumentError.value(value, 'trashRetentionDays', 'must be 3 or 7');
+    }
+    return value;
+  }
+
+  static int _validConversationCallLimit(int value) {
+    if (value < 1 || value > 20) {
+      throw ArgumentError.value(
+        value,
+        'conversationCallLimit',
+        'must be between 1 and 20',
+      );
+    }
+    return value;
+  }
+
+  static int _validModelTextContextChars(int value) {
+    if (value < 8000 || value > 64000) {
+      throw ArgumentError.value(
+        value,
+        'modelTextContextChars',
+        'must be between 8000 and 64000',
+      );
     }
     return value;
   }
@@ -1054,6 +1096,8 @@ class AppSettings {
     this.digestEnabled = true,
     this.digestHour = 20,
     this.digestMinute = 0,
+    int conversationCallLimit = 5,
+    int modelTextContextChars = 24000,
     this.progressNotifications = true,
     this.resultNotifications = true,
     this.digestNotifications = true,
@@ -1064,6 +1108,12 @@ class AppSettings {
        inferredInterests = inferredInterests ?? [],
        suppressedInterests = suppressedInterests ?? [],
        confirmedInterests = confirmedInterests ?? [],
+       conversationCallLimit = _validConversationCallLimit(
+         conversationCallLimit,
+       ),
+       modelTextContextChars = _validModelTextContextChars(
+         modelTextContextChars,
+       ),
        _trashRetentionDays = _validRetention(trashRetentionDays);
   Json toJson() => {
     'endpoint': endpoint,
@@ -1079,6 +1129,8 @@ class AppSettings {
     'digestEnabled': digestEnabled,
     'digestHour': digestHour,
     'digestMinute': digestMinute,
+    'conversationCallLimit': conversationCallLimit,
+    'modelTextContextChars': modelTextContextChars,
     'progressNotifications': progressNotifications,
     'resultNotifications': resultNotifications,
     'digestNotifications': digestNotifications,
@@ -1101,6 +1153,8 @@ class AppSettings {
     digestEnabled: j['digestEnabled'] as bool? ?? true,
     digestHour: j['digestHour'] as int? ?? 20,
     digestMinute: j['digestMinute'] as int? ?? 0,
+    conversationCallLimit: j['conversationCallLimit'] as int? ?? 5,
+    modelTextContextChars: j['modelTextContextChars'] as int? ?? 24000,
     progressNotifications: j['progressNotifications'] as bool? ?? true,
     resultNotifications: j['resultNotifications'] as bool? ?? true,
     digestNotifications: j['digestNotifications'] as bool? ?? true,
@@ -1117,6 +1171,11 @@ class AppSettings {
 class AppData {
   List<LibraryItem> items;
   List<Topic> topics;
+  List<Conversation> conversations;
+  List<ConversationTurn> conversationTurns;
+  List<SourceSegmentSummary> segmentSummaries;
+  List<KnowledgeProposal> knowledgeProposals;
+  List<KnowledgeRevision> knowledgeRevisions;
   List<Feed> feeds;
   List<FeedEntry> entries;
   List<ResearchRun> runs;
@@ -1126,6 +1185,11 @@ class AppData {
   AppData({
     List<LibraryItem>? items,
     List<Topic>? topics,
+    List<Conversation>? conversations,
+    List<ConversationTurn>? conversationTurns,
+    List<SourceSegmentSummary>? segmentSummaries,
+    List<KnowledgeProposal>? knowledgeProposals,
+    List<KnowledgeRevision>? knowledgeRevisions,
     List<Feed>? feeds,
     List<FeedEntry>? entries,
     List<ResearchRun>? runs,
@@ -1135,6 +1199,11 @@ class AppData {
     AppSettings? settings,
   }) : items = items ?? [],
        topics = topics ?? [],
+       conversations = conversations ?? [],
+       conversationTurns = conversationTurns ?? [],
+       segmentSummaries = segmentSummaries ?? [],
+       knowledgeProposals = knowledgeProposals ?? [],
+       knowledgeRevisions = knowledgeRevisions ?? [],
        feeds = feeds ?? [],
        entries = entries ?? [],
        runs = runs ?? [],
@@ -1143,9 +1212,14 @@ class AppData {
        acknowledgedShares = acknowledgedShares ?? [],
        settings = settings ?? AppSettings();
   Json toJson() => {
-    'version': 3,
+    'version': 4,
     'items': items.map((i) => i.toJson()).toList(),
     'topics': topics.map((t) => t.toJson()).toList(),
+    'conversations': conversations.map((c) => c.toJson()).toList(),
+    'conversationTurns': conversationTurns.map((t) => t.toJson()).toList(),
+    'segmentSummaries': segmentSummaries.map((s) => s.toJson()).toList(),
+    'knowledgeProposals': knowledgeProposals.map((p) => p.toJson()).toList(),
+    'knowledgeRevisions': knowledgeRevisions.map((r) => r.toJson()).toList(),
     'feeds': feeds.map((f) => f.toJson()).toList(),
     'entries': entries.map((e) => e.toJson()).toList(),
     'runs': runs.map((r) => r.toJson()).toList(),
@@ -1155,7 +1229,10 @@ class AppData {
     'settings': settings.toJson(),
   };
   factory AppData.fromJson(Json j) {
-    if (j['version'] != 1 && j['version'] != 2 && j['version'] != 3) {
+    if (j['version'] != 1 &&
+        j['version'] != 2 &&
+        j['version'] != 3 &&
+        j['version'] != 4) {
       throw const FormatException('不支持的数据版本');
     }
     return AppData(
@@ -1164,6 +1241,21 @@ class AppData {
           .toList(),
       topics: (j['topics'] as List? ?? [])
           .map((v) => Topic.fromJson(json(v)))
+          .toList(),
+      conversations: (j['conversations'] as List? ?? [])
+          .map((v) => Conversation.fromJson(json(v)))
+          .toList(),
+      conversationTurns: (j['conversationTurns'] as List? ?? [])
+          .map((v) => ConversationTurn.fromJson(json(v)))
+          .toList(),
+      segmentSummaries: (j['segmentSummaries'] as List? ?? [])
+          .map((v) => SourceSegmentSummary.fromJson(json(v)))
+          .toList(),
+      knowledgeProposals: (j['knowledgeProposals'] as List? ?? [])
+          .map((v) => KnowledgeProposal.fromJson(json(v)))
+          .toList(),
+      knowledgeRevisions: (j['knowledgeRevisions'] as List? ?? [])
+          .map((v) => KnowledgeRevision.fromJson(json(v)))
           .toList(),
       feeds: (j['feeds'] as List? ?? [])
           .map((v) => Feed.fromJson(json(v)))

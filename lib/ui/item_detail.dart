@@ -9,6 +9,7 @@ import '../core/models.dart';
 import '../platform/native_bridge.dart';
 import '../services/knowledge_service.dart';
 import 'common.dart';
+import 'conversation_page.dart';
 import 'research_detail.dart';
 import 'item_actions.dart';
 import 'developer_page.dart';
@@ -193,6 +194,23 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
       child: AppFrame(
         title: '阅读',
         actions: [
+          IconButton(
+            tooltip: '问这篇资料',
+            icon: const AfterwordIcon(Icons.question_answer_outlined),
+            onPressed: item.isActive
+                ? () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ConversationPage(
+                        controller: controller,
+                        scope: ConversationScope.item,
+                        scopeId: item.id,
+                        sourceIds: [item.id],
+                        title: '问这篇资料',
+                      ),
+                    ),
+                  )
+                : null,
+          ),
           IconButton(
             tooltip: '重新分析',
             icon: const AfterwordIcon(Icons.auto_awesome_outlined),

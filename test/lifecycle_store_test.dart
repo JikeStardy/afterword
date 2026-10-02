@@ -97,7 +97,7 @@ void main() {
     ((manifest['runs'] as List).single as Map).remove('inputItemIds');
     store.restore(archiveOf(manifest));
     final migrated = store.load();
-    expect(migrated.toJson()['version'], 3);
+    expect(migrated.toJson()['version'], 4);
     expect(migrated.items.single.analysis!.summary, 'Old summary');
     expect(migrated.items.single.analysis!.inputItemIds, isNull);
     expect(migrated.topics.single.inputItemIds, isNull);

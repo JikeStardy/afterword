@@ -238,16 +238,7 @@ class KnowledgeService {
           final candidate = EvidenceAnchor.fromJson(anchor);
           if (!sources.containsKey(candidate.sourceId) ||
               !availableEvidence.any(
-                (proof) =>
-                    proof.sourceId == candidate.sourceId &&
-                    proof.sourceVersion == candidate.sourceVersion &&
-                    proof.blockId == candidate.blockId &&
-                    proof.pdfPage == candidate.pdfPage &&
-                    proof.start == candidate.start &&
-                    proof.end == candidate.end &&
-                    proof.unresolved == candidate.unresolved &&
-                    normalizeQuote(proof.quote) ==
-                        normalizeQuote(candidate.quote),
+                (proof) => _sameAvailableEvidence(proof, candidate),
               )) {
             throw const FormatException('综合分析只能复用分段分析已收集的原文证据');
           }
@@ -269,7 +260,10 @@ class KnowledgeService {
     final blockId = anchor['blockId'];
     if (unresolved) {
       final quote = (anchor['quote'] as String? ?? '').trim();
-      if (quote.isEmpty) throw const FormatException('未定位证据必须保留摘录');
+      if (quote.isEmpty) {
+        if (_isUnverifiedPdfVisualAnchor(anchor, sources[sourceId]!)) return;
+        throw const FormatException('未定位证据必须保留摘录');
+      }
       return;
     }
     final source = sources[sourceId]!;
@@ -306,6 +300,34 @@ class KnowledgeService {
 
   static String normalizeQuote(String text) =>
       text.replaceAll(RegExp(r'[\s\u00a0]+'), ' ').trim();
+
+  static bool _sameAvailableEvidence(
+    EvidenceAnchor proof,
+    EvidenceAnchor candidate,
+  ) =>
+      proof.sourceId == candidate.sourceId &&
+      proof.sourceVersion == candidate.sourceVersion &&
+      proof.blockId == candidate.blockId &&
+      proof.windowId == candidate.windowId &&
+      proof.assetFingerprint == candidate.assetFingerprint &&
+      proof.pdfPage == candidate.pdfPage &&
+      proof.start == candidate.start &&
+      proof.end == candidate.end &&
+      proof.unresolved == candidate.unresolved &&
+      normalizeQuote(proof.quote) == normalizeQuote(candidate.quote);
+
+  static bool _isUnverifiedPdfVisualAnchor(Json anchor, LibraryItem source) {
+    final assetFingerprint = (anchor['assetFingerprint'] as String? ?? '')
+        .trim();
+    if (assetFingerprint.isEmpty || source.kind != ItemKind.pdf) return false;
+    final pdfPage = anchor['pdfPage'] ?? anchor['page'];
+    if (pdfPage is! int || pdfPage <= 0) return false;
+    final pageCount = source.pdfPageCount;
+    if (pageCount == null) return false;
+    return pdfPage >= source.pdfPageStart &&
+        pdfPage <= (source.pdfPageEnd ?? pageCount) &&
+        pdfPage <= pageCount;
+  }
 
   static String exportItemMarkdown(
     LibraryItem item, {
