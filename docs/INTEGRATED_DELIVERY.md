@@ -1,5 +1,7 @@
 # Readlater 统一需求与安装包
 
+当前分支整合范围和验收结果见 [2026-10-02 分支整合记录](BRANCH_CONSOLIDATION.md)，分支处理方式见 [当前分支清单](BRANCH_INVENTORY.md)。以下保留为 2026-09-26 的历史记录，不代表最新知识对话和分支合并后的验证结果。
+
 更新日期：2026-09-26。Android 个人测试整合版：**0.3.1+4**。
 整合分支：`feat/integrated-android-release`。
 

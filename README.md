@@ -40,7 +40,7 @@ flutter run -d <android-device-id>
 
 剩余需求、优先级、逐项验收条件与执行记录见 [需求执行清单](docs/BACKLOG.md)。
 
-当前整合范围、检查结果与未完成验收见 [统一交付清单](docs/INTEGRATED_DELIVERY.md)，后台专项流程见 [V3 设备测试](docs/V3_DEVICE_TESTS.md)。[V3 验证记录](docs/V3_DELIVERY.md)、[V2 交付说明](docs/V2_DELIVERY.md)、[docs/v2](docs/v2)、[原验收映射](docs/ACCEPTANCE.md) 和 [原实现状态](docs/IMPLEMENTATION_STATUS.md) 均保留为历史证据，不能代替当前版本验证。
+当前全部分支整合、检查结果及验证边界见 [分支整合记录](docs/BRANCH_CONSOLIDATION.md)，各分支处理方式见 [当前分支清单](docs/BRANCH_INVENTORY.md)。旧 Android 整合范围保留在 [统一交付清单](docs/INTEGRATED_DELIVERY.md)，后台专项流程见 [V3 设备测试](docs/V3_DEVICE_TESTS.md)。[V3 验证记录](docs/V3_DELIVERY.md)、[V2 交付说明](docs/V2_DELIVERY.md)、[docs/v2](docs/v2)、[原验收映射](docs/ACCEPTANCE.md) 和 [原实现状态](docs/IMPLEMENTATION_STATUS.md) 均保留为历史证据，不能代替当前版本验证。
 
 设备链路使用本地模型与搜索夹具。用户真实模型 Key、搜索 Key 和供应商兼容性尚未测试；真实可访问微信公众号文章仍需成功样本。长期主题追踪和研究推进效果需用户实际使用后评价。iOS 和 Mac 未构建验收，本轮交付仅针对 Android。
 

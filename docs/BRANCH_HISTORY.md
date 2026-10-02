@@ -57,7 +57,7 @@
 - 设备流程确认网页引用已核验、PDF 图像转录待核对、页号正确。
 - 打开文本 evidence 和 PDF evidence 弹窗；PDF 弹窗必须包含已解码页图，不能用错误占位通过。
 
-当前处理：**已由本轮设备回归覆盖行为，待实际执行验证；旧弹窗布局不重新引入。**
+当前处理：**已由本轮设备回归覆盖并在 API 36 arm64 模拟器执行通过；旧弹窗布局不重新引入。**
 
 当前证据：
 
@@ -66,9 +66,10 @@
 - `tool/fixture_server.mjs` 已补夹具响应，保留传入的 PDF evidence 字段，避免测试只验证文本 evidence。
 - `lib/platform/native_bridge.dart`、`lib/ui/item_detail.dart` 保留 PDF 页渲染和 evidence 到原文页的导航能力。
 
-待验证：
+本轮执行证据：
 
-- 上述设备回归已写入本轮整合代码，但此索引不声明它已经执行通过；通过状态以父任务后续实际 `device_flow_test.dart` / 设备套件输出为准。
+- `device_flow_test.dart` 与 `knowledge_dialogue_device_test.dart` 已在本轮执行通过；综合流程实际展开 PDF 证据、跳到物理页并断言可见 `RawImage.image` 非空，没有用错误占位通过。
+- 当前完整验收及边界见 [整合记录](BRANCH_CONSOLIDATION.md)。原始日志与 `pdf-evidence-page.png` 保存在忽略目录 `dist/branch-consolidation/`；历史截图保持原样。
 
 ### `22b8c7c` `style(ui): 完善阅读层级与统一视觉细节`
 
