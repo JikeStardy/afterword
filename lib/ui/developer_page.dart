@@ -8,6 +8,7 @@ import '../core/diagnostics.dart';
 import 'common.dart';
 import 'diagnostic_events_page.dart';
 import '../core/diagnostic_controller.dart';
+import 'afterword_art.dart';
 
 void openDiagnostics(
   BuildContext context,
@@ -86,12 +87,12 @@ class _DeveloperPageState extends State<DeveloperPage> {
           IconButton(
             tooltip: '导出全部日志',
             onPressed: () => _export(context, logs),
-            icon: const Icon(Icons.ios_share_outlined),
+            icon: const AfterwordIcon(Icons.ios_share_outlined),
           ),
           IconButton(
             tooltip: '清空日志',
             onPressed: () => _clear(context, widget.controller),
-            icon: const Icon(Icons.delete_outline),
+            icon: const AfterwordIcon(Icons.delete_outline),
           ),
         ],
         child: CustomScrollView(
@@ -101,7 +102,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.bug_report_outlined),
+                    leading: const AfterwordIcon(Icons.bug_report_outlined),
                     title: const Text('App 事件与诊断包'),
                     subtitle: Text(
                       '当前 ${logs.level.name.toUpperCase()} · 临时 DEBUG、筛选与内网上传',
@@ -184,6 +185,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
               const SliverFillRemaining(
                 hasScrollBody: false,
                 child: EmptyState(
+                  scene: 'logs-clear',
                   icon: Icons.receipt_long_outlined,
                   title: '暂无匹配日志',
                   message: '执行保存、分析或研究后，可在这里查看任务过程。',
@@ -232,7 +234,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
                             ),
                         ],
                       ),
-                      trailing: const Icon(Icons.chevron_right),
+                      trailing: const AfterwordIcon(Icons.chevron_right),
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute<void>(
@@ -316,6 +318,7 @@ class DiagnosticTaskPage extends StatelessWidget {
         return const AppFrame(
           title: '任务日志',
           child: EmptyState(
+            scene: 'logs-clear',
             icon: Icons.receipt_long_outlined,
             title: '日志已清理',
             message: '日志可能已到保留期限或被手动清空。',
@@ -329,7 +332,7 @@ class DiagnosticTaskPage extends StatelessWidget {
             tooltip: '导出此任务',
             onPressed: () =>
                 _export(context, controller.diagnostics, taskId: taskId),
-            icon: const Icon(Icons.ios_share_outlined),
+            icon: const AfterwordIcon(Icons.ios_share_outlined),
           ),
         ],
         child: ListView(
@@ -387,7 +390,7 @@ class DiagnosticTaskPage extends StatelessWidget {
             for (final step in task.steps)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(
+                leading: AfterwordIcon(
                   step.status == 'succeeded'
                       ? Icons.check_circle_outline
                       : step.status == 'running'

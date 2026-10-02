@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'item_detail.dart';
+import 'conversation_page.dart';
+import 'knowledge_page.dart';
 import 'library_page.dart';
 import 'research_detail.dart';
 import 'research_page.dart';
 import 'rss_page.dart';
 import 'settings_page.dart';
 import 'today_page.dart';
+import 'afterword_art.dart';
 
 class ReadlaterShell extends StatefulWidget {
   const ReadlaterShell({super.key, required this.controller});
@@ -44,7 +47,16 @@ class _ReadlaterShellState extends State<ReadlaterShell> {
                 body: Column(
                   children: [
                     Expanded(
-                      child: IndexedStack(index: _index, children: pages),
+                      child: IndexedStack(
+                        index: _index,
+                        children: [
+                          for (final page in pages.indexed)
+                            TickerMode(
+                              enabled: page.$1 == _index,
+                              child: page.$2,
+                            ),
+                        ],
+                      ),
                     ),
                     _ErrorBanner(
                       error: widget.controller.lastError,
@@ -63,28 +75,37 @@ class _ReadlaterShellState extends State<ReadlaterShell> {
                       setState(() => _index = value),
                   destinations: const [
                     NavigationDestination(
-                      icon: Icon(Icons.today_outlined),
-                      selectedIcon: Icon(Icons.today),
+                      icon: AfterwordIcon(Icons.today_outlined),
+                      selectedIcon: AfterwordIcon(Icons.today, selected: true),
                       label: '今日',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.collections_bookmark_outlined),
-                      selectedIcon: Icon(Icons.collections_bookmark),
+                      icon: AfterwordIcon(Icons.collections_bookmark_outlined),
+                      selectedIcon: AfterwordIcon(
+                        Icons.collections_bookmark,
+                        selected: true,
+                      ),
                       label: '资料',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.rss_feed_outlined),
-                      selectedIcon: Icon(Icons.rss_feed),
+                      icon: AfterwordIcon(Icons.rss_feed_outlined),
+                      selectedIcon: AfterwordIcon(
+                        Icons.rss_feed,
+                        selected: true,
+                      ),
                       label: 'RSS',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.travel_explore_outlined),
-                      selectedIcon: Icon(Icons.travel_explore),
+                      icon: AfterwordIcon(Icons.travel_explore_outlined),
+                      selectedIcon: AfterwordIcon(
+                        Icons.travel_explore,
+                        selected: true,
+                      ),
                       label: '研究',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.tune_outlined),
-                      selectedIcon: Icon(Icons.tune),
+                      icon: AfterwordIcon(Icons.tune_outlined),
+                      selectedIcon: AfterwordIcon(Icons.tune, selected: true),
                       label: '设置',
                     ),
                   ],
@@ -116,6 +137,39 @@ class _ReadlaterShellState extends State<ReadlaterShell> {
   void _openNavigation(BuildContext context, Map<String, String> navigation) {
     final type = navigation['entityType'] ?? '';
     final id = navigation['entityId'] ?? '';
+    if (type == 'conversation') {
+      final turn = widget.controller.data.conversationTurns
+          .where((t) => t.id == id)
+          .firstOrNull;
+      final conversation = widget.controller.data.conversations
+          .where((c) => c.id == turn?.conversationId)
+          .firstOrNull;
+      setState(() => _index = 3);
+      if (conversation != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ConversationPage(
+              controller: widget.controller,
+              initialConversationId: conversation.id,
+              scope: conversation.scope,
+              scopeId: conversation.scopeId,
+              sourceIds: conversation.sourceIds ?? [],
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (type == 'knowledge') {
+      setState(() => _index = 3);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              KnowledgePage(controller: widget.controller, topicId: id),
+        ),
+      );
+      return;
+    }
     if (type == 'today') {
       setState(() => _index = 0);
       return;
@@ -183,11 +237,11 @@ class _ErrorBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         color: Theme.of(context).colorScheme.errorContainer,
         child: ListTile(
-          leading: const Icon(Icons.error_outline),
+          leading: const AfterwordIcon(Icons.error_outline),
           title: Text(error!, maxLines: 3, overflow: TextOverflow.ellipsis),
           trailing: IconButton(
             tooltip: '关闭',
-            icon: const Icon(Icons.close),
+            icon: const AfterwordIcon(Icons.close),
             onPressed: onClear,
           ),
         ),
@@ -214,7 +268,7 @@ class _NoticeBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         color: Theme.of(context).colorScheme.primaryContainer,
         child: ListTile(
-          leading: const Icon(Icons.notifications_active_outlined),
+          leading: const AfterwordIcon(Icons.notifications_active_outlined),
           title: Text(
             notices.last,
             maxLines: 3,
@@ -222,7 +276,7 @@ class _NoticeBanner extends StatelessWidget {
           ),
           trailing: IconButton(
             tooltip: '已读',
-            icon: const Icon(Icons.done),
+            icon: const AfterwordIcon(Icons.done),
             onPressed: onClear,
           ),
         ),

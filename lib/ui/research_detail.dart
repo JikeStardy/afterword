@@ -7,10 +7,13 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import '../services/knowledge_service.dart';
 import 'common.dart';
+import 'conversation_page.dart';
 import 'developer_page.dart';
 import 'item_detail.dart';
+import 'knowledge_page.dart';
 import 'reading_content.dart';
 import 'research_dialogs.dart';
+import 'afterword_art.dart';
 
 class TopicDetailPage extends StatelessWidget {
   const TopicDetailPage({
@@ -38,6 +41,7 @@ class TopicDetailPage extends StatelessWidget {
       return const AppFrame(
         title: '主题',
         child: EmptyState(
+          scene: 'item-missing',
           icon: Icons.search_off,
           title: '主题不存在',
           message: '它可能已经在其他窗口中被更新。',
@@ -49,13 +53,38 @@ class TopicDetailPage extends StatelessWidget {
       title: topic.title,
       actions: [
         IconButton(
+          tooltip: '围绕主题讨论',
+          icon: const AfterwordIcon(Icons.question_answer_outlined),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ConversationPage(
+                controller: controller,
+                scope: ConversationScope.topic,
+                scopeId: topic.id,
+                sourceIds: topic.sourceIds,
+                title: '围绕主题讨论',
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: '知识草稿',
+          icon: const AfterwordIcon(Icons.library_add_check_outlined),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  KnowledgePage(controller: controller, topicId: topic.id),
+            ),
+          ),
+        ),
+        IconButton(
           tooltip: '编辑主题',
-          icon: const Icon(Icons.edit_outlined),
+          icon: const AfterwordIcon(Icons.edit_outlined),
           onPressed: () => _editTopic(context, topic),
         ),
         IconButton(
           tooltip: '更新综述',
-          icon: const Icon(Icons.auto_awesome),
+          icon: const AfterwordIcon(Icons.auto_awesome),
           onPressed: topic.status == 'synthesizing'
               ? null
               : () => runUiAction(
@@ -66,7 +95,7 @@ class TopicDetailPage extends StatelessWidget {
         ),
         IconButton(
           tooltip: '导出 Markdown',
-          icon: const Icon(Icons.download_outlined),
+          icon: const AfterwordIcon(Icons.download_outlined),
           onPressed: () => _exportMarkdown(context, topic),
         ),
       ],
@@ -81,6 +110,7 @@ class TopicDetailPage extends StatelessWidget {
             controller: controller,
             sourceContext: sourceContext,
           ),
+          KnowledgePanel(controller: controller, topic: topic),
           _TopicContextCard(topic: topic, controller: controller),
           _TopicScopeCard(topic: topic, controller: controller),
           if (topic.error.isNotEmpty)
@@ -89,7 +119,7 @@ class TopicDetailPage extends StatelessWidget {
               child: TextButton.icon(
                 onPressed: () =>
                     openDiagnostics(context, controller, entityId: topic.id),
-                icon: const Icon(Icons.receipt_long_outlined),
+                icon: const AfterwordIcon(Icons.receipt_long_outlined),
                 label: const Text('查看任务日志'),
               ),
             ),
@@ -199,6 +229,7 @@ class ResearchRunPage extends StatelessWidget {
           return const AppFrame(
             title: '研究记录',
             child: EmptyState(
+              scene: 'item-missing',
               icon: Icons.search_off,
               title: '研究记录不存在',
               message: '它可能已经在其他窗口中被更新。',
@@ -234,7 +265,7 @@ class _ResearchRunView extends StatelessWidget {
               child: TextButton.icon(
                 onPressed: () =>
                     openDiagnostics(context, controller, entityId: run.id),
-                icon: const Icon(Icons.receipt_long_outlined),
+                icon: const AfterwordIcon(Icons.receipt_long_outlined),
                 label: const Text('查看任务日志'),
               ),
             ),
@@ -330,7 +361,7 @@ class _OverviewCard extends StatelessWidget {
             spacing: 8,
             children: [
               TextButton.icon(
-                icon: const Icon(Icons.event_repeat_outlined),
+                icon: const AfterwordIcon(Icons.event_repeat_outlined),
                 label: const Text('7 天后复查'),
                 onPressed: () => controller.setTopicReview(
                   topic.id,
@@ -338,7 +369,7 @@ class _OverviewCard extends StatelessWidget {
                 ),
               ),
               TextButton.icon(
-                icon: const Icon(Icons.event_busy_outlined),
+                icon: const AfterwordIcon(Icons.event_busy_outlined),
                 label: const Text('清除复查'),
                 onPressed: () => controller.setTopicReview(topic.id, null),
               ),
@@ -415,7 +446,7 @@ class _RunSourceContextList extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
             leading: const CircleAvatar(radius: 13, child: Text('1')),
             title: Text('研究记录：${run.goal}'),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const AfterwordIcon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) =>
@@ -443,7 +474,7 @@ class _RunSourceContextList extends StatelessWidget {
             ),
             title: Text(entry.$2.title),
             subtitle: Text(entry.$2.url),
-            trailing: const Icon(Icons.open_in_new),
+            trailing: const AfterwordIcon(Icons.open_in_new),
             onTap: () => runUiAction(
               context,
               () => controller.native.openUrl(entry.$2.url),
@@ -459,7 +490,7 @@ class _RunSourceContextList extends StatelessWidget {
             ),
           ),
           title: Text('研究记录：${run.goal}'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AfterwordIcon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) =>
@@ -491,17 +522,40 @@ class _RunReportSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(run.goal, style: Theme.of(context).textTheme.headlineSmall),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AfterwordScene(
+                scene: researchRunScene(run.status),
+                motion: researchRunMotion(run.status),
+                size: 72,
+                color: Theme.of(context).colorScheme.primary,
+                semanticLabel: researchRunStatusLabel(run.status),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  run.goal,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+            ],
+          ),
           SizedBox(height: layout.rowPadding),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              StatusPill(label: run.status, positive: run.status == 'done'),
+              StatusPill(
+                label: researchRunStatusLabel(run.status),
+                positive: researchRunIsComplete(run),
+              ),
               Text('调用：${run.calls}/${run.callLimit}'),
               Text('开始：${shortDate(run.startedAt)}'),
               if (run.completedAt != null)
-                Text('完成：${shortDate(run.completedAt)}'),
+                Text(
+                  '${researchRunIsComplete(run) ? '完成' : '结束'}：${shortDate(run.completedAt)}',
+                ),
               if (run.stale) const StatusPill(label: '输入已变化，结果可能过时'),
               if (run.requestPending) const StatusPill(label: '等待确认'),
             ],
@@ -557,12 +611,12 @@ class _TopicContextCard extends StatelessWidget {
               spacing: 8,
               children: [
                 FilledButton.icon(
-                  icon: const Icon(Icons.add),
+                  icon: const AfterwordIcon(Icons.add),
                   label: const Text('添加 context'),
                   onPressed: () => _addContext(context),
                 ),
                 OutlinedButton.icon(
-                  icon: const Icon(Icons.library_books_outlined),
+                  icon: const AfterwordIcon(Icons.library_books_outlined),
                   label: const Text('从资料/笔记加入'),
                   onPressed: () => _importContext(context),
                 ),
@@ -586,12 +640,12 @@ class _TopicContextCard extends StatelessWidget {
               ),
               IconButton(
                 tooltip: '从资料/笔记加入',
-                icon: const Icon(Icons.library_books_outlined),
+                icon: const AfterwordIcon(Icons.library_books_outlined),
                 onPressed: () => _importContext(context),
               ),
               IconButton(
                 tooltip: '添加 context',
-                icon: const Icon(Icons.add),
+                icon: const AfterwordIcon(Icons.add),
                 onPressed: () => _addContext(context),
               ),
             ],
@@ -600,9 +654,12 @@ class _TopicContextCard extends StatelessWidget {
           for (final entry in entries)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(_contextIcon(entry['kind'] as String? ?? '')),
+              leading: AfterwordIcon(
+                _contextAfterwordIcon(entry['kind'] as String? ?? ''),
+              ),
               title: Text(entry['text'] as String? ?? ''),
               trailing: PopupMenuButton<String>(
+                icon: const AfterwordIcon(Icons.more_horiz),
                 onSelected: (value) =>
                     _handleEntryAction(context, entry, value),
                 itemBuilder: (context) => [
@@ -711,7 +768,7 @@ class _TopicContextCard extends StatelessWidget {
     );
   }
 
-  IconData _contextIcon(String kind) => switch (kind) {
+  IconData _contextAfterwordIcon(String kind) => switch (kind) {
     'goal' => Icons.flag_outlined,
     'constraint' => Icons.rule_outlined,
     'judgement' => Icons.psychology_alt_outlined,
@@ -751,7 +808,7 @@ class _TopicScopeCard extends StatelessWidget {
                 ),
               ),
               TextButton.icon(
-                icon: const Icon(Icons.tune_outlined),
+                icon: const AfterwordIcon(Icons.tune_outlined),
                 label: const Text('选择'),
                 onPressed: () => _editScope(context),
               ),
@@ -924,7 +981,9 @@ class _TrackingCard extends StatelessWidget {
               ),
               const Spacer(),
               TextButton.icon(
-                icon: Icon(topic.tracking ? Icons.pause : Icons.play_arrow),
+                icon: AfterwordIcon(
+                  topic.tracking ? Icons.pause : Icons.play_arrow,
+                ),
                 label: Text(topic.tracking ? '暂停追踪' : '授权追踪'),
                 onPressed: () =>
                     topic.tracking ? _pause(context) : _authorize(context),
@@ -983,7 +1042,7 @@ class _TopicRunCard extends StatelessWidget {
           for (final run in runs)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.travel_explore_outlined),
+              leading: const AfterwordIcon(Icons.travel_explore_outlined),
               title: Text(
                 run.goal,
                 maxLines: 2,
@@ -992,7 +1051,7 @@ class _TopicRunCard extends StatelessWidget {
               subtitle: Text(
                 '${run.sources.length} 个来源 · ${shortDate(run.completedAt ?? run.startedAt)}${run.stale ? ' · 已过时' : ''}',
               ),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const AfterwordIcon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) =>
@@ -1022,7 +1081,7 @@ class _SourcesCard extends StatelessWidget {
           for (final source in sources)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.link),
+              leading: const AfterwordIcon(Icons.link),
               title: Text(source.title),
               subtitle: Text(source.url),
               onTap: () => runUiAction(

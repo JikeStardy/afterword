@@ -11,6 +11,11 @@ import '../platform/native_bridge.dart';
 import '../services/content_service.dart';
 import '../services/intelligence_service.dart';
 import '../services/knowledge_service.dart';
+import '../services/conversation_service.dart';
+import '../services/source_understanding_service.dart';
+
+import 'package:crypto/crypto.dart';
+
 import 'models.dart';
 import 'diagnostics.dart';
 import 'retrieval.dart';
@@ -19,6 +24,17 @@ import 'store.dart';
 part 'task_controller.dart';
 part 'personal_controller.dart';
 part 'web_capture_controller.dart';
+part 'conversation_controller.dart';
+part 'source_controller.dart';
+
+class JobExecutionContext {
+  final BackgroundJob job;
+  final Completer<void> cancelled = Completer<void>();
+  JobExecutionContext(this.job);
+  void cancel() {
+    if (!cancelled.isCompleted) cancelled.complete();
+  }
+}
 
 abstract class SecretStore {
   Future<String?> read(String key);
@@ -53,7 +69,11 @@ class AppController extends ChangeNotifier {
   final SecretStore secrets;
   AppData data = AppData();
   RuntimeState runtime = RuntimeState();
-  BackgroundJob? _currentJob;
+  final Object _jobContextKey = Object();
+  final Map<String, JobExecutionContext> _runningJobs = {};
+  BackgroundJob? get _currentJob =>
+      (Zone.current[_jobContextKey] as JobExecutionContext?)?.job;
+  Future<void>? _conversationQueueFuture;
   Future<void>? _queueFuture;
   Future<void>? _interactiveFuture;
   bool _digestOnly = false;
@@ -168,6 +188,20 @@ class AppController extends ChangeNotifier {
   }
 
   void _recoverInterruptedTasks() {
+    for (final turn in data.conversationTurns.where(
+      (t) => ['running', 'queued'].contains(t.status),
+    )) {
+      turn.status = 'interrupted';
+      turn.error = turn.requestPending
+          ? '上次请求结果不确定；手动重试会继续累计调用预算并可能重复计费'
+          : '上次回答已中断，请手动重试';
+      for (final job in runtime.jobs.where(
+        (j) => j.type == 'conversation' && j.entityId == turn.id,
+      )) {
+        job.status = 'paused';
+        job.checkpoint['requiresAttention'] = true;
+      }
+    }
     for (final item in data.items) {
       if (['analyzing', 'pending'].contains(item.status)) {
         item.status = 'interrupted';
@@ -285,7 +319,10 @@ class AppController extends ChangeNotifier {
         type: type,
         title: title,
         entityId: entityId,
-        allowed: () => _valid(revision) && (authorized?.call() ?? true),
+        allowed: () =>
+            _valid(revision) &&
+            (_currentJob == null || _jobIsCurrent(_currentJob!)) &&
+            (authorized?.call() ?? true),
         excludedUrls: data.items
             .where((i) => !i.isActive && i.url.isNotEmpty)
             .map((i) => i.url)
@@ -308,7 +345,10 @@ class AppController extends ChangeNotifier {
 
   bool _valid(int revision) => !_disposed && revision == _lifecycleRevision;
   void _guard(int revision) {
-    if (!_valid(revision)) throw const DiagnosticCancelled();
+    if (!_valid(revision) ||
+        (_currentJob != null && !_jobIsCurrent(_currentJob!))) {
+      throw const DiagnosticCancelled();
+    }
   }
 
   void _requireActive(LibraryItem item) {
@@ -434,6 +474,9 @@ class AppController extends ChangeNotifier {
   void _invalidateTasks() {
     _interactiveWebCaptureRequests.clear();
     _lifecycleRevision++;
+    for (final context in _runningJobs.values) {
+      context.cancel();
+    }
     for (final job in runtime.jobs) {
       if (['queued', 'running', 'paused'].contains(job.status)) {
         job.status = 'cancelled';
@@ -995,7 +1038,18 @@ class AppController extends ChangeNotifier {
         diagnostics.addInputIds(inputs);
         _saveCheckpoint('准备分析', {'inputIds': inputs.toList()});
         late Analysis analysis;
-        if (item.kind == ItemKind.pdf) {
+        if (_currentJob?.version != 1 &&
+            (item.kind == ItemKind.pdf ||
+                (item.kind != ItemKind.image &&
+                    item.body.length >
+                        (settings.modelTextContextChars ~/ 2)))) {
+          analysis = await _analyzeSourceV2(
+            item,
+            promptItem,
+            settings,
+            related,
+          );
+        } else if (item.kind == ItemKind.pdf) {
           final path = assetPath(item.assets.first);
           final summaries = strings(_currentJob?.checkpoint['pdfSummaries']);
           var page = (_currentJob?.checkpoint['pdfPage'] as num?)?.toInt() ?? 0;
@@ -1073,13 +1127,14 @@ class AppController extends ChangeNotifier {
           );
         } else if (item.kind == ItemKind.image) {
           final asset = item.assets.first;
-          final bytes = await File(assetPath(asset)).readAsBytes();
           analysis = await _analyzeWithTrace(
             settings,
             _apiKey,
             promptItem,
             related,
-            imageDataUrls: ['data:${asset.mime};base64,${base64Encode(bytes)}'],
+            imageDataUrls: [
+              'data:image/jpeg;base64,${await native.normalizeImage(assetPath(asset))}',
+            ],
           );
         } else {
           final text = item.body;
@@ -1242,6 +1297,17 @@ class AppController extends ChangeNotifier {
     for (final insight in analysis.structuredInsights) {
       for (final anchor in insight.evidence) {
         try {
+          final source = sources[anchor.sourceId];
+          if (source?.kind == ItemKind.pdf &&
+              anchor.assetFingerprint?.isNotEmpty == true &&
+              anchor.pdfPage != null &&
+              anchor.pdfPage! >= 1 &&
+              anchor.pdfPage! <= (source!.pdfPageCount ?? 0) &&
+              anchor.sourceVersion == source.contentVersion &&
+              anchor.unresolved) {
+            anchor.note = '已提供该 PDF 页，视觉观察未经精确文字核验';
+            continue;
+          }
           if (anchor.sourceId == summarySourceId &&
               anchor.pdfPage == null &&
               anchor.quote.trim().isEmpty) {
@@ -1313,25 +1379,20 @@ class AppController extends ChangeNotifier {
     for (final topic in data.topics.toList()) {
       DiagnosticScope.ensureAllowed();
       if (!_topicSupported(topic)) continue;
-      if (strings(_currentJob?.checkpoint['updatedTopics'])
-          .contains(topic.id)) {
-        continue;
-      }
       if (topic.sourceIds.contains(item.id) ||
           _terms('${topic.title} ${topic.question}')
               .intersection(_terms('${item.title} ${item.body}'))
               .isNotEmpty) {
-        await synthesizeTopic(topic.id);
-        if (topic.status == 'ready') {
-          _saveCheckpoint('已更新主题', {
-            'updatedTopics': [
-              ...strings(_currentJob?.checkpoint['updatedTopics']),
-              topic.id,
-            ],
-          });
-        }
+        final job = _enqueue('knowledgeProposal', topic.id);
+        job.checkpoint['newSourceIds'] = {
+          ...strings(job.checkpoint['newSourceIds']),
+          item.id,
+        }.toList();
+        job.checkpoint['inputIds'] = strings(job.checkpoint['newSourceIds']);
       }
     }
+    _save();
+    _scheduleQueue();
   }
 
   Future<void> markRead(String id) async {
@@ -2221,6 +2282,9 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final context in _runningJobs.values) {
+      context.cancel();
+    }
     _disposed = true;
     for (final timer in _refreshTimers.values) {
       timer.cancel();

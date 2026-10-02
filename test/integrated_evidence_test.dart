@@ -82,6 +82,7 @@ void main() {
         jobs: [
           BackgroundJob(
             id: 'job',
+            version: 1,
             type: 'analysis',
             entityId: item.id,
             checkpoint: {
@@ -243,10 +244,22 @@ void main() {
                 jsonDecode(request.body)['messages'][1]['content'] as String;
             final input =
                 jsonDecode(prompt.split('输入数据：').last) as Map<String, dynamic>;
+            if (input['task'] != null) {
+              return http.Response(
+                jsonEncode({
+                  'choices': [
+                    {
+                      'message': {
+                        'content': jsonEncode({'summary': 'Generated summary'}),
+                      },
+                    },
+                  ],
+                }),
+                200,
+              );
+            }
             final item = input['item'] as Map<String, dynamic>;
-            final isFinal = (item['content'] as String).contains(
-              'Generated summary',
-            );
+            final isFinal = input.containsKey('availableEvidence');
             Map<String, dynamic> anchor;
             if (isFinal) {
               finalInput = input;

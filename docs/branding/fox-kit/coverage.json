@@ -1,0 +1,1287 @@
+{
+  "source": "lib/**/*.dart Icons.* extraction",
+  "totalSourceGlyphs": 82,
+  "totalIconAssets": 85,
+  "categoryCounts": {
+    "navigation": 5,
+    "actions": 27,
+    "implicit": 13,
+    "reading": 23,
+    "state": 12,
+    "settings": 5
+  },
+  "coveredSourceGlyphs": 82,
+  "missingSourceGlyphs": [],
+  "covered": [
+    {
+      "glyph": "add",
+      "count": 7,
+      "files": [
+        "lib/ui/library_page.dart",
+        "lib/ui/research_detail.dart",
+        "lib/ui/research_page.dart",
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "add"
+      ]
+    },
+    {
+      "glyph": "add_link",
+      "count": 1,
+      "files": [
+        "lib/ui/library_page.dart"
+      ],
+      "iconIds": [
+        "add-link"
+      ]
+    },
+    {
+      "glyph": "article_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "article"
+      ]
+    },
+    {
+      "glyph": "attach_file",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "attach-file"
+      ]
+    },
+    {
+      "glyph": "auto_awesome",
+      "count": 3,
+      "files": [
+        "lib/ui/item_detail.dart",
+        "lib/ui/research_detail.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "analysis"
+      ]
+    },
+    {
+      "glyph": "auto_awesome_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "analysis"
+      ]
+    },
+    {
+      "glyph": "block",
+      "count": 1,
+      "files": [
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "block"
+      ]
+    },
+    {
+      "glyph": "border_color_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "highlight"
+      ]
+    },
+    {
+      "glyph": "bug_report_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/developer_page.dart"
+      ],
+      "iconIds": [
+        "bug"
+      ]
+    },
+    {
+      "glyph": "check_circle",
+      "count": 1,
+      "files": [
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "check-circle"
+      ]
+    },
+    {
+      "glyph": "check_circle_outline",
+      "count": 2,
+      "files": [
+        "lib/ui/developer_page.dart",
+        "lib/ui/research_page.dart"
+      ],
+      "iconIds": [
+        "check-circle"
+      ]
+    },
+    {
+      "glyph": "chevron_left",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "back",
+        "chevron-left"
+      ]
+    },
+    {
+      "glyph": "chevron_right",
+      "count": 12,
+      "files": [
+        "lib/ui/common.dart",
+        "lib/ui/developer_page.dart",
+        "lib/ui/item_detail.dart",
+        "lib/ui/research_detail.dart",
+        "lib/ui/research_page.dart",
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "chevron-right"
+      ]
+    },
+    {
+      "glyph": "circle",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "bullet",
+        "radio-on",
+        "circle"
+      ]
+    },
+    {
+      "glyph": "circle_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "radio-off",
+        "circle"
+      ]
+    },
+    {
+      "glyph": "close",
+      "count": 4,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/library_page.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "close"
+      ]
+    },
+    {
+      "glyph": "code_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "code"
+      ]
+    },
+    {
+      "glyph": "collections_bookmark",
+      "count": 1,
+      "files": [
+        "lib/ui/app_shell.dart"
+      ],
+      "iconIds": [
+        "library"
+      ]
+    },
+    {
+      "glyph": "collections_bookmark_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/library_page.dart"
+      ],
+      "iconIds": [
+        "library"
+      ]
+    },
+    {
+      "glyph": "delete_outline",
+      "count": 4,
+      "files": [
+        "lib/ui/developer_page.dart",
+        "lib/ui/diagnostic_events_page.dart",
+        "lib/ui/item_detail.dart",
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "delete"
+      ]
+    },
+    {
+      "glyph": "delete_sweep_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/library_page.dart"
+      ],
+      "iconIds": [
+        "delete-sweep"
+      ]
+    },
+    {
+      "glyph": "done",
+      "count": 2,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "done"
+      ]
+    },
+    {
+      "glyph": "done_all",
+      "count": 1,
+      "files": [
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "done-all"
+      ]
+    },
+    {
+      "glyph": "download_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/item_detail.dart",
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "download"
+      ]
+    },
+    {
+      "glyph": "edit_note_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "edit-note"
+      ]
+    },
+    {
+      "glyph": "edit_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "edit"
+      ]
+    },
+    {
+      "glyph": "error_outline",
+      "count": 3,
+      "files": [
+        "lib/main.dart",
+        "lib/ui/app_shell.dart",
+        "lib/ui/developer_page.dart"
+      ],
+      "iconIds": [
+        "error"
+      ]
+    },
+    {
+      "glyph": "event_busy_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "review-clear"
+      ]
+    },
+    {
+      "glyph": "event_repeat_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "review-repeat"
+      ]
+    },
+    {
+      "glyph": "flag_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "goal"
+      ]
+    },
+    {
+      "glyph": "format_quote",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "quote"
+      ]
+    },
+    {
+      "glyph": "format_size",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "text-size"
+      ]
+    },
+    {
+      "glyph": "help_outline",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "help"
+      ]
+    },
+    {
+      "glyph": "history_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "history"
+      ]
+    },
+    {
+      "glyph": "image_not_supported",
+      "count": 1,
+      "files": [
+        "lib/ui/common.dart"
+      ],
+      "iconIds": [
+        "image-missing"
+      ]
+    },
+    {
+      "glyph": "image_search_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "image-search"
+      ]
+    },
+    {
+      "glyph": "inbox_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "inbox"
+      ]
+    },
+    {
+      "glyph": "insert_drive_file",
+      "count": 1,
+      "files": [
+        "lib/ui/common.dart"
+      ],
+      "iconIds": [
+        "file"
+      ]
+    },
+    {
+      "glyph": "inventory_2_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/diagnostic_events_page.dart",
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "backup-box"
+      ]
+    },
+    {
+      "glyph": "ios_share_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/developer_page.dart"
+      ],
+      "iconIds": [
+        "share"
+      ]
+    },
+    {
+      "glyph": "library_books_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "library-import"
+      ]
+    },
+    {
+      "glyph": "lightbulb_outline",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "idea"
+      ]
+    },
+    {
+      "glyph": "link",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "link"
+      ]
+    },
+    {
+      "glyph": "more_horiz",
+      "count": 1,
+      "files": [
+        "lib/ui/item_actions.dart"
+      ],
+      "iconIds": [
+        "more"
+      ]
+    },
+    {
+      "glyph": "note_add_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "note-add"
+      ]
+    },
+    {
+      "glyph": "notes_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "notes"
+      ]
+    },
+    {
+      "glyph": "notifications_active",
+      "count": 1,
+      "files": [
+        "lib/ui/research_page.dart"
+      ],
+      "iconIds": [
+        "notifications-active"
+      ]
+    },
+    {
+      "glyph": "notifications_active_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "notifications-active"
+      ]
+    },
+    {
+      "glyph": "notifications_off_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "notifications-off"
+      ]
+    },
+    {
+      "glyph": "open_in_browser_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "open-browser"
+      ]
+    },
+    {
+      "glyph": "open_in_new",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "open-new"
+      ]
+    },
+    {
+      "glyph": "pause",
+      "count": 2,
+      "files": [
+        "lib/ui/research_detail.dart",
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "pause"
+      ]
+    },
+    {
+      "glyph": "picture_as_pdf_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "pdf"
+      ]
+    },
+    {
+      "glyph": "play_arrow",
+      "count": 2,
+      "files": [
+        "lib/ui/research_detail.dart",
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "play"
+      ]
+    },
+    {
+      "glyph": "playlist_add_check",
+      "count": 1,
+      "files": [
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "playlist-check"
+      ]
+    },
+    {
+      "glyph": "psychology_alt_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/research_detail.dart",
+        "lib/ui/research_page.dart"
+      ],
+      "iconIds": [
+        "judgement"
+      ]
+    },
+    {
+      "glyph": "public",
+      "count": 1,
+      "files": [
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "public-web"
+      ]
+    },
+    {
+      "glyph": "rate_review_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "review"
+      ]
+    },
+    {
+      "glyph": "receipt_long_outlined",
+      "count": 6,
+      "files": [
+        "lib/ui/developer_page.dart",
+        "lib/ui/item_detail.dart",
+        "lib/ui/research_detail.dart",
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "logs"
+      ]
+    },
+    {
+      "glyph": "refresh",
+      "count": 3,
+      "files": [
+        "lib/ui/rss_page.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "refresh"
+      ]
+    },
+    {
+      "glyph": "refresh_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "refresh"
+      ]
+    },
+    {
+      "glyph": "replay",
+      "count": 1,
+      "files": [
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "replay"
+      ]
+    },
+    {
+      "glyph": "restore",
+      "count": 1,
+      "files": [
+        "lib/main.dart"
+      ],
+      "iconIds": [
+        "restore"
+      ]
+    },
+    {
+      "glyph": "restore_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "restore"
+      ]
+    },
+    {
+      "glyph": "rss_feed",
+      "count": 3,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/rss_page.dart"
+      ],
+      "iconIds": [
+        "rss"
+      ]
+    },
+    {
+      "glyph": "rss_feed_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/app_shell.dart"
+      ],
+      "iconIds": [
+        "rss"
+      ]
+    },
+    {
+      "glyph": "rule_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "rule"
+      ]
+    },
+    {
+      "glyph": "save_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/item_detail.dart",
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "save"
+      ]
+    },
+    {
+      "glyph": "schedule",
+      "count": 1,
+      "files": [
+        "lib/ui/settings_page.dart"
+      ],
+      "iconIds": [
+        "schedule",
+        "time-picker"
+      ]
+    },
+    {
+      "glyph": "science_outlined",
+      "count": 4,
+      "files": [
+        "lib/ui/library_page.dart",
+        "lib/ui/research_page.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "science"
+      ]
+    },
+    {
+      "glyph": "search",
+      "count": 1,
+      "files": [
+        "lib/ui/library_page.dart"
+      ],
+      "iconIds": [
+        "search"
+      ]
+    },
+    {
+      "glyph": "search_off",
+      "count": 2,
+      "files": [
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "search-off"
+      ]
+    },
+    {
+      "glyph": "search_off_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/library_page.dart"
+      ],
+      "iconIds": [
+        "search-off"
+      ]
+    },
+    {
+      "glyph": "search_outlined",
+      "count": 1,
+      "files": [
+        "lib/ui/item_detail.dart"
+      ],
+      "iconIds": [
+        "search"
+      ]
+    },
+    {
+      "glyph": "select_all",
+      "count": 1,
+      "files": [
+        "lib/ui/library_page.dart"
+      ],
+      "iconIds": [
+        "select-all"
+      ]
+    },
+    {
+      "glyph": "timelapse",
+      "count": 1,
+      "files": [
+        "lib/ui/developer_page.dart"
+      ],
+      "iconIds": [
+        "timelapse"
+      ]
+    },
+    {
+      "glyph": "today",
+      "count": 1,
+      "files": [
+        "lib/ui/app_shell.dart"
+      ],
+      "iconIds": [
+        "today"
+      ]
+    },
+    {
+      "glyph": "today_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "today"
+      ]
+    },
+    {
+      "glyph": "travel_explore",
+      "count": 2,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/research_page.dart"
+      ],
+      "iconIds": [
+        "research"
+      ]
+    },
+    {
+      "glyph": "travel_explore_outlined",
+      "count": 8,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/item_detail.dart",
+        "lib/ui/library_page.dart",
+        "lib/ui/research_detail.dart",
+        "lib/ui/research_page.dart",
+        "lib/ui/today_page.dart"
+      ],
+      "iconIds": [
+        "research"
+      ]
+    },
+    {
+      "glyph": "tune",
+      "count": 1,
+      "files": [
+        "lib/ui/app_shell.dart"
+      ],
+      "iconIds": [
+        "settings"
+      ]
+    },
+    {
+      "glyph": "tune_outlined",
+      "count": 2,
+      "files": [
+        "lib/ui/app_shell.dart",
+        "lib/ui/research_detail.dart"
+      ],
+      "iconIds": [
+        "settings"
+      ]
+    }
+  ],
+  "extraMaterialMappings": [
+    {
+      "glyph": "access_time",
+      "iconIds": [
+        "schedule",
+        "time-picker"
+      ]
+    },
+    {
+      "glyph": "archive_outlined",
+      "iconIds": [
+        "archive"
+      ]
+    },
+    {
+      "glyph": "arrow_back",
+      "iconIds": [
+        "back"
+      ]
+    },
+    {
+      "glyph": "arrow_drop_down",
+      "iconIds": [
+        "expand-more"
+      ]
+    },
+    {
+      "glyph": "calendar_today",
+      "iconIds": [
+        "date-picker"
+      ]
+    },
+    {
+      "glyph": "check",
+      "iconIds": [
+        "checkbox-on",
+        "checkbox-check"
+      ]
+    },
+    {
+      "glyph": "check_box",
+      "iconIds": [
+        "checkbox-on"
+      ]
+    },
+    {
+      "glyph": "check_box_outline_blank",
+      "iconIds": [
+        "checkbox-off"
+      ]
+    },
+    {
+      "glyph": "delete_forever",
+      "iconIds": [
+        "permanent-delete"
+      ]
+    },
+    {
+      "glyph": "expand_less",
+      "iconIds": [
+        "expand-less"
+      ]
+    },
+    {
+      "glyph": "expand_more",
+      "iconIds": [
+        "expand-more"
+      ]
+    },
+    {
+      "glyph": "more_vert",
+      "iconIds": [
+        "more-vertical"
+      ]
+    },
+    {
+      "glyph": "radio_button_checked",
+      "iconIds": [
+        "radio-on"
+      ]
+    },
+    {
+      "glyph": "radio_button_unchecked",
+      "iconIds": [
+        "radio-off"
+      ]
+    },
+    {
+      "glyph": "restore_from_trash",
+      "iconIds": [
+        "restore-trash"
+      ]
+    },
+    {
+      "glyph": "unarchive_outlined",
+      "iconIds": [
+        "unarchive"
+      ]
+    }
+  ],
+  "originalGlyphMap": {
+    "access_time": [
+      "schedule",
+      "time-picker"
+    ],
+    "add": [
+      "add"
+    ],
+    "add_link": [
+      "add-link"
+    ],
+    "archive_outlined": [
+      "archive"
+    ],
+    "arrow_back": [
+      "back"
+    ],
+    "arrow_drop_down": [
+      "expand-more"
+    ],
+    "article_outlined": [
+      "article"
+    ],
+    "attach_file": [
+      "attach-file"
+    ],
+    "auto_awesome": [
+      "analysis"
+    ],
+    "auto_awesome_outlined": [
+      "analysis"
+    ],
+    "block": [
+      "block"
+    ],
+    "border_color_outlined": [
+      "highlight"
+    ],
+    "bug_report_outlined": [
+      "bug"
+    ],
+    "calendar_today": [
+      "date-picker"
+    ],
+    "check": [
+      "checkbox-check",
+      "checkbox-on"
+    ],
+    "check_box": [
+      "checkbox-on"
+    ],
+    "check_box_outline_blank": [
+      "checkbox-off"
+    ],
+    "check_circle": [
+      "check-circle"
+    ],
+    "check_circle_outline": [
+      "check-circle"
+    ],
+    "chevron_left": [
+      "back",
+      "chevron-left"
+    ],
+    "chevron_right": [
+      "chevron-right"
+    ],
+    "circle": [
+      "bullet",
+      "circle",
+      "radio-on"
+    ],
+    "circle_outlined": [
+      "circle",
+      "radio-off"
+    ],
+    "close": [
+      "close"
+    ],
+    "code_outlined": [
+      "code"
+    ],
+    "collections_bookmark": [
+      "library"
+    ],
+    "collections_bookmark_outlined": [
+      "library"
+    ],
+    "delete_forever": [
+      "permanent-delete"
+    ],
+    "delete_outline": [
+      "delete"
+    ],
+    "delete_sweep_outlined": [
+      "delete-sweep"
+    ],
+    "done": [
+      "done"
+    ],
+    "done_all": [
+      "done-all"
+    ],
+    "download_outlined": [
+      "download"
+    ],
+    "edit_note_outlined": [
+      "edit-note"
+    ],
+    "edit_outlined": [
+      "edit"
+    ],
+    "error_outline": [
+      "error"
+    ],
+    "event_busy_outlined": [
+      "review-clear"
+    ],
+    "event_repeat_outlined": [
+      "review-repeat"
+    ],
+    "expand_less": [
+      "expand-less"
+    ],
+    "expand_more": [
+      "expand-more"
+    ],
+    "flag_outlined": [
+      "goal"
+    ],
+    "format_quote": [
+      "quote"
+    ],
+    "format_size": [
+      "text-size"
+    ],
+    "help_outline": [
+      "help"
+    ],
+    "history_outlined": [
+      "history"
+    ],
+    "image_not_supported": [
+      "image-missing"
+    ],
+    "image_search_outlined": [
+      "image-search"
+    ],
+    "inbox_outlined": [
+      "inbox"
+    ],
+    "insert_drive_file": [
+      "file"
+    ],
+    "inventory_2_outlined": [
+      "backup-box"
+    ],
+    "ios_share_outlined": [
+      "share"
+    ],
+    "library_books_outlined": [
+      "library-import"
+    ],
+    "lightbulb_outline": [
+      "idea"
+    ],
+    "link": [
+      "link"
+    ],
+    "more_horiz": [
+      "more"
+    ],
+    "more_vert": [
+      "more-vertical"
+    ],
+    "note_add_outlined": [
+      "note-add"
+    ],
+    "notes_outlined": [
+      "notes"
+    ],
+    "notifications_active": [
+      "notifications-active"
+    ],
+    "notifications_active_outlined": [
+      "notifications-active"
+    ],
+    "notifications_off_outlined": [
+      "notifications-off"
+    ],
+    "open_in_browser_outlined": [
+      "open-browser"
+    ],
+    "open_in_new": [
+      "open-new"
+    ],
+    "pause": [
+      "pause"
+    ],
+    "picture_as_pdf_outlined": [
+      "pdf"
+    ],
+    "play_arrow": [
+      "play"
+    ],
+    "playlist_add_check": [
+      "playlist-check"
+    ],
+    "psychology_alt_outlined": [
+      "judgement"
+    ],
+    "public": [
+      "public-web"
+    ],
+    "radio_button_checked": [
+      "radio-on"
+    ],
+    "radio_button_unchecked": [
+      "radio-off"
+    ],
+    "rate_review_outlined": [
+      "review"
+    ],
+    "receipt_long_outlined": [
+      "logs"
+    ],
+    "refresh": [
+      "refresh"
+    ],
+    "refresh_outlined": [
+      "refresh"
+    ],
+    "replay": [
+      "replay"
+    ],
+    "restore": [
+      "restore"
+    ],
+    "restore_from_trash": [
+      "restore-trash"
+    ],
+    "restore_outlined": [
+      "restore"
+    ],
+    "rss_feed": [
+      "rss"
+    ],
+    "rss_feed_outlined": [
+      "rss"
+    ],
+    "rule_outlined": [
+      "rule"
+    ],
+    "save_outlined": [
+      "save"
+    ],
+    "schedule": [
+      "schedule",
+      "time-picker"
+    ],
+    "science_outlined": [
+      "science"
+    ],
+    "search": [
+      "search"
+    ],
+    "search_off": [
+      "search-off"
+    ],
+    "search_off_outlined": [
+      "search-off"
+    ],
+    "search_outlined": [
+      "search"
+    ],
+    "select_all": [
+      "select-all"
+    ],
+    "timelapse": [
+      "timelapse"
+    ],
+    "today": [
+      "today"
+    ],
+    "today_outlined": [
+      "today"
+    ],
+    "travel_explore": [
+      "research"
+    ],
+    "travel_explore_outlined": [
+      "research"
+    ],
+    "tune": [
+      "settings"
+    ],
+    "tune_outlined": [
+      "settings"
+    ],
+    "unarchive_outlined": [
+      "unarchive"
+    ]
+  }
+}

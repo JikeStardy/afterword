@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'common.dart';
+import 'afterword_art.dart';
 
 class ItemActionsMenu extends StatelessWidget {
   const ItemActionsMenu({
@@ -20,7 +21,7 @@ class ItemActionsMenu extends StatelessWidget {
     final archived = items.every((item) => item.isArchived);
     return PopupMenuButton<String>(
       tooltip: '管理资料',
-      icon: const Icon(Icons.more_horiz),
+      icon: const AfterwordIcon(Icons.more_horiz),
       onSelected: (action) async {
         await performItemAction(context, controller, action, items);
         onDone?.call();

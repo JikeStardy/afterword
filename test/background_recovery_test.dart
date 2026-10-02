@@ -219,7 +219,7 @@ void main() {
     }
   });
 
-  test('interrupted long text reuses saved chunks and cancelled jobs stay cancelled', () async {
+  test('legacy v1 interrupted text reuses saved chunks and cancelled jobs stay cancelled', () async {
     final directory = Directory.systemTemp.createTempSync(
       'readlater-recovery-',
     );
@@ -230,8 +230,11 @@ void main() {
       secrets: RecoverySecrets(),
     );
     await controller.initialize();
-    await controller.saveSettings(AppSettings(textModel: 'fixture'));
+    await controller.saveSettings(
+      AppSettings(textModel: 'fixture', modelTextContextChars: 64000),
+    );
     final item = await controller.captureText(List.filled(48001, '文').join());
+    controller.runtime.jobs.single.version = 1;
     await firstAi.entered.future.timeout(const Duration(seconds: 3));
     expect(
       controller.runtime.jobs.single.checkpoint['textSections'],

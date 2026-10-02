@@ -1,0 +1,1810 @@
+{
+  "name": "有下文 · Afterword Fox Kit",
+  "strokeWidth": 1.75,
+  "defaultColor": "#476b4f",
+  "icons": [
+    {
+      "id": "today",
+      "label": "今日",
+      "category": "navigation",
+      "tags": [
+        "today",
+        "daily",
+        "recommendation"
+      ],
+      "material": [
+        "today_outlined",
+        "today"
+      ],
+      "hasSelectedState": true,
+      "svg": "icons/today.svg",
+      "selectedSvg": "icons/today-selected.svg"
+    },
+    {
+      "id": "library",
+      "label": "资料库",
+      "category": "navigation",
+      "tags": [
+        "library",
+        "archive",
+        "collection"
+      ],
+      "material": [
+        "collections_bookmark_outlined",
+        "collections_bookmark"
+      ],
+      "hasSelectedState": true,
+      "svg": "icons/library.svg",
+      "selectedSvg": "icons/library-selected.svg"
+    },
+    {
+      "id": "rss",
+      "label": "RSS",
+      "category": "navigation",
+      "tags": [
+        "rss",
+        "feed",
+        "subscription"
+      ],
+      "material": [
+        "rss_feed_outlined",
+        "rss_feed"
+      ],
+      "hasSelectedState": true,
+      "svg": "icons/rss.svg",
+      "selectedSvg": "icons/rss-selected.svg"
+    },
+    {
+      "id": "research",
+      "label": "研究",
+      "category": "navigation",
+      "tags": [
+        "research",
+        "topic",
+        "explore",
+        "web"
+      ],
+      "material": [
+        "travel_explore_outlined",
+        "travel_explore"
+      ],
+      "hasSelectedState": true,
+      "svg": "icons/research.svg",
+      "selectedSvg": "icons/research-selected.svg"
+    },
+    {
+      "id": "settings",
+      "label": "设置",
+      "category": "navigation",
+      "tags": [
+        "settings",
+        "tune",
+        "scope"
+      ],
+      "material": [
+        "tune_outlined",
+        "tune"
+      ],
+      "hasSelectedState": true,
+      "svg": "icons/settings.svg",
+      "selectedSvg": "icons/settings-selected.svg"
+    },
+    {
+      "id": "add",
+      "label": "添加",
+      "category": "actions",
+      "tags": [
+        "add",
+        "new"
+      ],
+      "material": [
+        "add"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/add.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "add-link",
+      "label": "收藏链接",
+      "category": "actions",
+      "tags": [
+        "add",
+        "link",
+        "save"
+      ],
+      "material": [
+        "add_link"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/add-link.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "block",
+      "label": "跳过",
+      "category": "actions",
+      "tags": [
+        "block",
+        "skip"
+      ],
+      "material": [
+        "block",
+        "stop_circle_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/block.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "back",
+      "label": "返回",
+      "category": "implicit",
+      "tags": [
+        "back",
+        "appbar"
+      ],
+      "material": [
+        "arrow_back",
+        "chevron_left"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/back.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "chevron-left",
+      "label": "上一页",
+      "category": "actions",
+      "tags": [
+        "previous",
+        "page"
+      ],
+      "material": [
+        "chevron_left"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/chevron-left.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "chevron-right",
+      "label": "下一步",
+      "category": "actions",
+      "tags": [
+        "next",
+        "detail"
+      ],
+      "material": [
+        "chevron_right"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/chevron-right.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "expand-more",
+      "label": "展开",
+      "category": "implicit",
+      "tags": [
+        "expand",
+        "dropdown"
+      ],
+      "material": [
+        "expand_more",
+        "arrow_drop_down"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/expand-more.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "expand-less",
+      "label": "收起",
+      "category": "implicit",
+      "tags": [
+        "collapse"
+      ],
+      "material": [
+        "expand_less"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/expand-less.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "close",
+      "label": "关闭",
+      "category": "actions",
+      "tags": [
+        "close",
+        "cancel",
+        "clear"
+      ],
+      "material": [
+        "close"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/close.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "delete",
+      "label": "删除",
+      "category": "actions",
+      "tags": [
+        "delete",
+        "trash"
+      ],
+      "material": [
+        "delete_outline"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/delete.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "delete-sweep",
+      "label": "清空回收站",
+      "category": "actions",
+      "tags": [
+        "delete",
+        "sweep",
+        "trash"
+      ],
+      "material": [
+        "delete_sweep_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/delete-sweep.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "permanent-delete",
+      "label": "永久删除",
+      "category": "implicit",
+      "tags": [
+        "delete",
+        "danger",
+        "permanent"
+      ],
+      "material": [
+        "delete_forever"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/permanent-delete.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "archive",
+      "label": "归档",
+      "category": "implicit",
+      "tags": [
+        "archive"
+      ],
+      "material": [
+        "archive_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/archive.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "unarchive",
+      "label": "移出归档",
+      "category": "implicit",
+      "tags": [
+        "archive",
+        "restore"
+      ],
+      "material": [
+        "unarchive_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/unarchive.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "restore-trash",
+      "label": "从回收站恢复",
+      "category": "implicit",
+      "tags": [
+        "trash",
+        "restore"
+      ],
+      "material": [
+        "restore_from_trash"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/restore-trash.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "done",
+      "label": "完成",
+      "category": "actions",
+      "tags": [
+        "done",
+        "read"
+      ],
+      "material": [
+        "done"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/done.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "done-all",
+      "label": "全部完成",
+      "category": "actions",
+      "tags": [
+        "done",
+        "batch"
+      ],
+      "material": [
+        "done_all"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/done-all.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "download",
+      "label": "导出",
+      "category": "actions",
+      "tags": [
+        "download",
+        "export"
+      ],
+      "material": [
+        "download_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/download.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "edit",
+      "label": "编辑",
+      "category": "actions",
+      "tags": [
+        "edit",
+        "topic"
+      ],
+      "material": [
+        "edit_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/edit.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "edit-note",
+      "label": "编辑批注",
+      "category": "actions",
+      "tags": [
+        "edit",
+        "note",
+        "paste"
+      ],
+      "material": [
+        "edit_note_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/edit-note.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "share",
+      "label": "分享导出",
+      "category": "actions",
+      "tags": [
+        "share",
+        "export"
+      ],
+      "material": [
+        "ios_share_outlined",
+        "send"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/share.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "more",
+      "label": "更多",
+      "category": "actions",
+      "tags": [
+        "more",
+        "menu"
+      ],
+      "material": [
+        "more_horiz"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/more.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "more-vertical",
+      "label": "更多菜单",
+      "category": "implicit",
+      "tags": [
+        "more",
+        "popup"
+      ],
+      "material": [
+        "more_vert"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/more-vertical.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "note-add",
+      "label": "添加笔记",
+      "category": "actions",
+      "tags": [
+        "note",
+        "add",
+        "pdf"
+      ],
+      "material": [
+        "note_add_outlined",
+        "add_comment_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/note-add.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "open-browser",
+      "label": "浏览器打开",
+      "category": "actions",
+      "tags": [
+        "browser",
+        "web",
+        "open"
+      ],
+      "material": [
+        "open_in_browser_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/open-browser.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "open-new",
+      "label": "外部打开",
+      "category": "actions",
+      "tags": [
+        "external",
+        "source"
+      ],
+      "material": [
+        "open_in_new"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/open-new.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "pause",
+      "label": "暂停",
+      "category": "actions",
+      "tags": [
+        "pause",
+        "tracking"
+      ],
+      "material": [
+        "pause"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/pause.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "play",
+      "label": "启用",
+      "category": "actions",
+      "tags": [
+        "play",
+        "resume"
+      ],
+      "material": [
+        "play_arrow"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/play.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "playlist-check",
+      "label": "选中处理",
+      "category": "actions",
+      "tags": [
+        "playlist",
+        "rss",
+        "saved"
+      ],
+      "material": [
+        "playlist_add_check",
+        "library_add_check_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/playlist-check.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "refresh",
+      "label": "刷新",
+      "category": "actions",
+      "tags": [
+        "refresh",
+        "reload"
+      ],
+      "material": [
+        "refresh",
+        "refresh_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/refresh.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "replay",
+      "label": "重试",
+      "category": "actions",
+      "tags": [
+        "retry",
+        "replay"
+      ],
+      "material": [
+        "replay"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/replay.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "restore",
+      "label": "恢复",
+      "category": "actions",
+      "tags": [
+        "restore",
+        "backup"
+      ],
+      "material": [
+        "restore",
+        "restore_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/restore.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "save",
+      "label": "保存",
+      "category": "actions",
+      "tags": [
+        "save",
+        "settings"
+      ],
+      "material": [
+        "save_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/save.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "search",
+      "label": "搜索",
+      "category": "actions",
+      "tags": [
+        "search",
+        "find",
+        "page"
+      ],
+      "material": [
+        "search",
+        "search_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/search.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "select-all",
+      "label": "全选",
+      "category": "actions",
+      "tags": [
+        "select",
+        "batch"
+      ],
+      "material": [
+        "select_all"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/select-all.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "article",
+      "label": "文章",
+      "category": "reading",
+      "tags": [
+        "article",
+        "item"
+      ],
+      "material": [
+        "article_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/article.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "attach-file",
+      "label": "附件",
+      "category": "reading",
+      "tags": [
+        "attachment"
+      ],
+      "material": [
+        "attach_file"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/attach-file.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "analysis",
+      "label": "分析",
+      "category": "reading",
+      "tags": [
+        "analysis",
+        "insight",
+        "synthesis"
+      ],
+      "material": [
+        "auto_awesome",
+        "auto_awesome_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/analysis.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "highlight",
+      "label": "高亮",
+      "category": "reading",
+      "tags": [
+        "highlight",
+        "mark"
+      ],
+      "material": [
+        "border_color_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/highlight.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "goal",
+      "label": "目标",
+      "category": "reading",
+      "tags": [
+        "goal",
+        "flag"
+      ],
+      "material": [
+        "flag_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/goal.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "quote",
+      "label": "引用",
+      "category": "reading",
+      "tags": [
+        "quote",
+        "evidence"
+      ],
+      "material": [
+        "format_quote"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/quote.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "text-size",
+      "label": "字号",
+      "category": "reading",
+      "tags": [
+        "font",
+        "text"
+      ],
+      "material": [
+        "format_size"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/text-size.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "history",
+      "label": "历史",
+      "category": "reading",
+      "tags": [
+        "history"
+      ],
+      "material": [
+        "history_outlined",
+        "history"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/history.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "image-search",
+      "label": "补图",
+      "category": "reading",
+      "tags": [
+        "image",
+        "search"
+      ],
+      "material": [
+        "image_search_outlined",
+        "image_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/image-search.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "file",
+      "label": "文件",
+      "category": "reading",
+      "tags": [
+        "file"
+      ],
+      "material": [
+        "insert_drive_file"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/file.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "library-import",
+      "label": "资料导入",
+      "category": "reading",
+      "tags": [
+        "library",
+        "import",
+        "background"
+      ],
+      "material": [
+        "library_books_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/library-import.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "idea",
+      "label": "观点",
+      "category": "reading",
+      "tags": [
+        "idea",
+        "insight"
+      ],
+      "material": [
+        "lightbulb_outline"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/idea.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "link",
+      "label": "链接",
+      "category": "reading",
+      "tags": [
+        "link",
+        "source"
+      ],
+      "material": [
+        "link"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/link.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "notes",
+      "label": "笔记",
+      "category": "reading",
+      "tags": [
+        "notes",
+        "background"
+      ],
+      "material": [
+        "notes_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/notes.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "pdf",
+      "label": "PDF",
+      "category": "reading",
+      "tags": [
+        "pdf",
+        "page"
+      ],
+      "material": [
+        "picture_as_pdf_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/pdf.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "judgement",
+      "label": "判断",
+      "category": "reading",
+      "tags": [
+        "judgement",
+        "thinking"
+      ],
+      "material": [
+        "psychology_alt_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/judgement.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "review",
+      "label": "反馈",
+      "category": "reading",
+      "tags": [
+        "review",
+        "feedback"
+      ],
+      "material": [
+        "rate_review_outlined",
+        "question_answer_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/review.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "rule",
+      "label": "限制",
+      "category": "reading",
+      "tags": [
+        "constraint",
+        "rule"
+      ],
+      "material": [
+        "rule_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/rule.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "science",
+      "label": "研究记录",
+      "category": "reading",
+      "tags": [
+        "science",
+        "task",
+        "record"
+      ],
+      "material": [
+        "science_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/science.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "public-web",
+      "label": "网页抓取",
+      "category": "reading",
+      "tags": [
+        "web",
+        "fetch"
+      ],
+      "material": [
+        "public"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/public-web.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "review-repeat",
+      "label": "七天复查",
+      "category": "reading",
+      "tags": [
+        "review",
+        "repeat",
+        "calendar"
+      ],
+      "material": [
+        "event_repeat_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/review-repeat.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "review-clear",
+      "label": "清除复查",
+      "category": "reading",
+      "tags": [
+        "review",
+        "clear",
+        "calendar"
+      ],
+      "material": [
+        "event_busy_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/review-clear.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "help",
+      "label": "问题",
+      "category": "reading",
+      "tags": [
+        "question",
+        "help"
+      ],
+      "material": [
+        "help_outline"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/help.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "check-circle",
+      "label": "成功",
+      "category": "state",
+      "tags": [
+        "success",
+        "selected",
+        "done"
+      ],
+      "material": [
+        "check_circle",
+        "check_circle_outline"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/check-circle.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "bullet",
+      "label": "列表圆点",
+      "category": "state",
+      "tags": [
+        "bullet",
+        "dot"
+      ],
+      "material": [
+        "circle"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/bullet.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "radio-off",
+      "label": "单选未选",
+      "category": "state",
+      "tags": [
+        "radio",
+        "off",
+        "unselected"
+      ],
+      "material": [
+        "circle_outlined",
+        "radio_button_unchecked"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/radio-off.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "radio-on",
+      "label": "单选已选",
+      "category": "state",
+      "tags": [
+        "radio",
+        "on",
+        "selected"
+      ],
+      "material": [
+        "circle",
+        "radio_button_checked"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/radio-on.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "circle",
+      "label": "圆形状态",
+      "category": "state",
+      "tags": [
+        "circle",
+        "status"
+      ],
+      "material": [
+        "circle",
+        "circle_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/circle.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "error",
+      "label": "错误",
+      "category": "state",
+      "tags": [
+        "error",
+        "failed"
+      ],
+      "material": [
+        "error_outline"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/error.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "image-missing",
+      "label": "图片损坏",
+      "category": "state",
+      "tags": [
+        "image",
+        "missing"
+      ],
+      "material": [
+        "image_not_supported"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/image-missing.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "inbox",
+      "label": "收件箱空",
+      "category": "state",
+      "tags": [
+        "inbox",
+        "empty"
+      ],
+      "material": [
+        "inbox_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/inbox.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "notifications-active",
+      "label": "通知开启",
+      "category": "state",
+      "tags": [
+        "notification",
+        "tracking"
+      ],
+      "material": [
+        "notifications_active",
+        "notifications_active_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/notifications-active.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "notifications-off",
+      "label": "通知关闭",
+      "category": "state",
+      "tags": [
+        "notification",
+        "off"
+      ],
+      "material": [
+        "notifications_off_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/notifications-off.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "search-off",
+      "label": "无搜索结果",
+      "category": "state",
+      "tags": [
+        "search",
+        "empty"
+      ],
+      "material": [
+        "search_off",
+        "search_off_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/search-off.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "timelapse",
+      "label": "运行中",
+      "category": "state",
+      "tags": [
+        "running",
+        "diagnostic"
+      ],
+      "material": [
+        "timelapse"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/timelapse.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "bug",
+      "label": "事件诊断",
+      "category": "settings",
+      "tags": [
+        "bug",
+        "diagnostic"
+      ],
+      "material": [
+        "bug_report_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/bug.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "code",
+      "label": "开发者日志",
+      "category": "settings",
+      "tags": [
+        "code",
+        "developer"
+      ],
+      "material": [
+        "code_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/code.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "backup-box",
+      "label": "诊断包",
+      "category": "settings",
+      "tags": [
+        "backup",
+        "inventory"
+      ],
+      "material": [
+        "inventory_2_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/backup-box.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "logs",
+      "label": "任务日志",
+      "category": "settings",
+      "tags": [
+        "log",
+        "receipt"
+      ],
+      "material": [
+        "receipt_long_outlined"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/logs.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "schedule",
+      "label": "每日时间",
+      "category": "settings",
+      "tags": [
+        "schedule",
+        "time"
+      ],
+      "material": [
+        "schedule",
+        "access_time"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/schedule.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "checkbox-off",
+      "label": "复选未选",
+      "category": "implicit",
+      "tags": [
+        "checkbox",
+        "off"
+      ],
+      "material": [
+        "check_box_outline_blank"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/checkbox-off.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "checkbox-on",
+      "label": "复选已选",
+      "category": "implicit",
+      "tags": [
+        "checkbox",
+        "chip",
+        "on"
+      ],
+      "material": [
+        "check_box",
+        "check"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/checkbox-on.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "checkbox-check",
+      "label": "勾选标记",
+      "category": "implicit",
+      "tags": [
+        "checkbox",
+        "chip",
+        "check"
+      ],
+      "material": [
+        "check"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/checkbox-check.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "date-picker",
+      "label": "日期",
+      "category": "implicit",
+      "tags": [
+        "date",
+        "calendar"
+      ],
+      "material": [
+        "calendar_today"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/date-picker.svg",
+      "selectedSvg": null
+    },
+    {
+      "id": "time-picker",
+      "label": "时间",
+      "category": "implicit",
+      "tags": [
+        "time",
+        "clock"
+      ],
+      "material": [
+        "access_time",
+        "schedule"
+      ],
+      "hasSelectedState": false,
+      "svg": "icons/time-picker.svg",
+      "selectedSvg": null
+    }
+  ],
+  "scenes": [
+    {
+      "id": "today-clear",
+      "label": "今日留白",
+      "description": "今日暂无新的推荐；安静等待下一篇，不推断已有资料全部读完。",
+      "svg": "scenes/today-clear.svg"
+    },
+    {
+      "id": "library-empty",
+      "label": "书库等第一篇",
+      "description": "书库尚无资料；配合“添加链接或文件”入口。",
+      "svg": "scenes/library-empty.svg"
+    },
+    {
+      "id": "archive-empty",
+      "label": "归档还空着",
+      "description": "归档列表为空；归档资料不会参与新的分析。",
+      "svg": "scenes/archive-empty.svg"
+    },
+    {
+      "id": "trash-empty",
+      "label": "回收站很干净",
+      "description": "回收站为空；以轻盈叶片表达整理完成。",
+      "svg": "scenes/trash-empty.svg"
+    },
+    {
+      "id": "search-empty",
+      "label": "还没找到",
+      "description": "书库、来源或日志筛选没有匹配项；保留修改查询入口。",
+      "svg": "scenes/search-empty.svg"
+    },
+    {
+      "id": "rss-empty",
+      "label": "等一缕新消息",
+      "description": "尚未添加订阅；以熟悉的 RSS 波纹提示订阅入口。",
+      "svg": "scenes/rss-empty.svg"
+    },
+    {
+      "id": "feed-quiet",
+      "label": "订阅暂时安静",
+      "description": "已订阅但没有条目；保留刷新入口，不暗示自动同步。",
+      "svg": "scenes/feed-quiet.svg"
+    },
+    {
+      "id": "research-empty",
+      "label": "一个问题的起点",
+      "description": "尚无研究主题；问号与延伸路径提示提出问题。",
+      "svg": "scenes/research-empty.svg"
+    },
+    {
+      "id": "item-missing",
+      "label": "这一页不在了",
+      "description": "资料已删除，或所选主题、运行记录已经不存在。",
+      "svg": "scenes/item-missing.svg"
+    },
+    {
+      "id": "unanalyzed",
+      "label": "等一次细读",
+      "description": "资料已保存，尚未分析；对应“开始分析”操作。",
+      "svg": "scenes/unanalyzed.svg"
+    },
+    {
+      "id": "logs-clear",
+      "label": "记录清爽",
+      "description": "诊断日志为空；不把没有日志解读为服务已验证正常。",
+      "svg": "scenes/logs-clear.svg"
+    },
+    {
+      "id": "startup-error",
+      "label": "稍等，重试一下",
+      "description": "启动或加载失败；错误详情和重试按钮应由页面提供。",
+      "svg": "scenes/startup-error.svg"
+    },
+    {
+      "id": "capturing",
+      "label": "把这一篇收好",
+      "description": "添加链接、导入文件或保存笔记；动效只表示处理中。",
+      "svg": "scenes/capturing.svg"
+    },
+    {
+      "id": "analyzing",
+      "label": "顺着线索读下去",
+      "description": "分析或研究进行中；路径循环表示等待，不表示百分比。",
+      "svg": "scenes/analyzing.svg"
+    },
+    {
+      "id": "saved",
+      "label": "已经收好了",
+      "description": "保存成功的短反馈；完成后停在确定的勾选状态。",
+      "svg": "scenes/saved.svg"
+    },
+    {
+      "id": "paused",
+      "label": "线索留在这里",
+      "description": "任务暂停或自动研究关闭；静止的暂停标记保留上下文。",
+      "svg": "scenes/paused.svg"
+    },
+    {
+      "id": "complete",
+      "label": "读到新的下文",
+      "description": "研究运行完成；书页与勾选表达得到成果，不替代结果内容。",
+      "svg": "scenes/complete.svg"
+    }
+  ],
+  "motions": [
+    {
+      "id": "fox-greeting",
+      "label": "见面 · 尾尖轻摆",
+      "description": "进入样册或空态时轻摆一次；不在阅读时持续摇晃。",
+      "duration": 1800,
+      "loop": false,
+      "sceneId": "today-clear",
+      "type": "idle"
+    },
+    {
+      "id": "collect-page",
+      "label": "收下 · 书页落定",
+      "description": "保存过程中书页向收纳方向轻落；真实成功另用勾选反馈。",
+      "duration": 1400,
+      "loop": true,
+      "sceneId": "capturing",
+      "type": "collect"
+    },
+    {
+      "id": "follow-thread",
+      "label": "细读 · 线索流动",
+      "description": "研究或分析期间缓慢呼吸、线索前行；只表达忙碌，不伪造进度。",
+      "duration": 2400,
+      "loop": true,
+      "sceneId": "analyzing",
+      "type": "analyze"
+    },
+    {
+      "id": "save-confirm",
+      "label": "收好 · 勾选回应",
+      "description": "收到保存成功事件后播放一次，停在成功图形。",
+      "duration": 700,
+      "loop": false,
+      "sceneId": "saved",
+      "type": "saved"
+    },
+    {
+      "id": "empty-arrival",
+      "label": "等候 · 轻轻出现",
+      "description": "空态内容进入时播放一次，不掩盖添加或搜索入口。",
+      "duration": 650,
+      "loop": false,
+      "sceneId": "library-empty",
+      "type": "empty"
+    },
+    {
+      "id": "retry-notice",
+      "label": "重试 · 温和提醒",
+      "description": "错误标记轻摆一次；不震动整个页面，也不自动重试任务。",
+      "duration": 520,
+      "loop": false,
+      "sceneId": "startup-error",
+      "type": "retry"
+    },
+    {
+      "id": "pause-rest",
+      "label": "暂停 · 尾巴歇下",
+      "description": "任务暂停后轻轻收势一次，随后保持静止。",
+      "duration": 500,
+      "loop": false,
+      "sceneId": "paused",
+      "type": "paused"
+    },
+    {
+      "id": "research-done",
+      "label": "完成 · 翻到下文",
+      "description": "研究完成后书页和勾选轻展一次，随后展示结果入口。",
+      "duration": 1000,
+      "loop": false,
+      "sceneId": "complete",
+      "type": "complete"
+    }
+  ],
+  "originalGlyphMap": {
+    "access_time": [
+      "schedule",
+      "time-picker"
+    ],
+    "add": [
+      "add"
+    ],
+    "add_link": [
+      "add-link"
+    ],
+    "archive_outlined": [
+      "archive"
+    ],
+    "arrow_back": [
+      "back"
+    ],
+    "arrow_drop_down": [
+      "expand-more"
+    ],
+    "article_outlined": [
+      "article"
+    ],
+    "attach_file": [
+      "attach-file"
+    ],
+    "auto_awesome": [
+      "analysis"
+    ],
+    "auto_awesome_outlined": [
+      "analysis"
+    ],
+    "block": [
+      "block"
+    ],
+    "border_color_outlined": [
+      "highlight"
+    ],
+    "bug_report_outlined": [
+      "bug"
+    ],
+    "calendar_today": [
+      "date-picker"
+    ],
+    "check": [
+      "checkbox-check",
+      "checkbox-on"
+    ],
+    "check_box": [
+      "checkbox-on"
+    ],
+    "check_box_outline_blank": [
+      "checkbox-off"
+    ],
+    "check_circle": [
+      "check-circle"
+    ],
+    "check_circle_outline": [
+      "check-circle"
+    ],
+    "chevron_left": [
+      "back",
+      "chevron-left"
+    ],
+    "chevron_right": [
+      "chevron-right"
+    ],
+    "circle": [
+      "bullet",
+      "circle",
+      "radio-on"
+    ],
+    "circle_outlined": [
+      "circle",
+      "radio-off"
+    ],
+    "close": [
+      "close"
+    ],
+    "code_outlined": [
+      "code"
+    ],
+    "collections_bookmark": [
+      "library"
+    ],
+    "collections_bookmark_outlined": [
+      "library"
+    ],
+    "delete_forever": [
+      "permanent-delete"
+    ],
+    "delete_outline": [
+      "delete"
+    ],
+    "delete_sweep_outlined": [
+      "delete-sweep"
+    ],
+    "done": [
+      "done"
+    ],
+    "done_all": [
+      "done-all"
+    ],
+    "download_outlined": [
+      "download"
+    ],
+    "edit_note_outlined": [
+      "edit-note"
+    ],
+    "edit_outlined": [
+      "edit"
+    ],
+    "error_outline": [
+      "error"
+    ],
+    "event_busy_outlined": [
+      "review-clear"
+    ],
+    "event_repeat_outlined": [
+      "review-repeat"
+    ],
+    "expand_less": [
+      "expand-less"
+    ],
+    "expand_more": [
+      "expand-more"
+    ],
+    "flag_outlined": [
+      "goal"
+    ],
+    "format_quote": [
+      "quote"
+    ],
+    "format_size": [
+      "text-size"
+    ],
+    "help_outline": [
+      "help"
+    ],
+    "history_outlined": [
+      "history"
+    ],
+    "image_not_supported": [
+      "image-missing"
+    ],
+    "image_search_outlined": [
+      "image-search"
+    ],
+    "inbox_outlined": [
+      "inbox"
+    ],
+    "insert_drive_file": [
+      "file"
+    ],
+    "inventory_2_outlined": [
+      "backup-box"
+    ],
+    "ios_share_outlined": [
+      "share"
+    ],
+    "library_books_outlined": [
+      "library-import"
+    ],
+    "lightbulb_outline": [
+      "idea"
+    ],
+    "link": [
+      "link"
+    ],
+    "more_horiz": [
+      "more"
+    ],
+    "more_vert": [
+      "more-vertical"
+    ],
+    "note_add_outlined": [
+      "note-add"
+    ],
+    "notes_outlined": [
+      "notes"
+    ],
+    "notifications_active": [
+      "notifications-active"
+    ],
+    "notifications_active_outlined": [
+      "notifications-active"
+    ],
+    "notifications_off_outlined": [
+      "notifications-off"
+    ],
+    "open_in_browser_outlined": [
+      "open-browser"
+    ],
+    "open_in_new": [
+      "open-new"
+    ],
+    "pause": [
+      "pause"
+    ],
+    "picture_as_pdf_outlined": [
+      "pdf"
+    ],
+    "play_arrow": [
+      "play"
+    ],
+    "playlist_add_check": [
+      "playlist-check"
+    ],
+    "psychology_alt_outlined": [
+      "judgement"
+    ],
+    "public": [
+      "public-web"
+    ],
+    "radio_button_checked": [
+      "radio-on"
+    ],
+    "radio_button_unchecked": [
+      "radio-off"
+    ],
+    "rate_review_outlined": [
+      "review"
+    ],
+    "receipt_long_outlined": [
+      "logs"
+    ],
+    "refresh": [
+      "refresh"
+    ],
+    "refresh_outlined": [
+      "refresh"
+    ],
+    "replay": [
+      "replay"
+    ],
+    "restore": [
+      "restore"
+    ],
+    "restore_from_trash": [
+      "restore-trash"
+    ],
+    "restore_outlined": [
+      "restore"
+    ],
+    "rss_feed": [
+      "rss"
+    ],
+    "rss_feed_outlined": [
+      "rss"
+    ],
+    "rule_outlined": [
+      "rule"
+    ],
+    "save_outlined": [
+      "save"
+    ],
+    "schedule": [
+      "schedule",
+      "time-picker"
+    ],
+    "science_outlined": [
+      "science"
+    ],
+    "search": [
+      "search"
+    ],
+    "search_off": [
+      "search-off"
+    ],
+    "search_off_outlined": [
+      "search-off"
+    ],
+    "search_outlined": [
+      "search"
+    ],
+    "select_all": [
+      "select-all"
+    ],
+    "timelapse": [
+      "timelapse"
+    ],
+    "today": [
+      "today"
+    ],
+    "today_outlined": [
+      "today"
+    ],
+    "travel_explore": [
+      "research"
+    ],
+    "travel_explore_outlined": [
+      "research"
+    ],
+    "tune": [
+      "settings"
+    ],
+    "tune_outlined": [
+      "settings"
+    ],
+    "unarchive_outlined": [
+      "unarchive"
+    ]
+  }
+}

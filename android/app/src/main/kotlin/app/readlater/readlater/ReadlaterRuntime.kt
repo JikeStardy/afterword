@@ -16,10 +16,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.drawable.Icon
 import android.graphics.pdf.PdfRenderer
+import android.media.ExifInterface
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -392,6 +395,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
                 "pendingShares" -> result.success(pendingShares())
                 "acknowledgeShare" -> acknowledgeShare(call, result)
                 "renderPdf" -> renderPdf(call, result)
+                "normalizeImage" -> normalizeImage(call, result)
                 "requestNotificationPermission" -> requestNotificationPermission(result)
                 "notify" -> notifyCompat(call, result)
                 "publishNotification" -> publishNotification(call, result)
@@ -678,7 +682,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
             Notification.Builder(app)
         }
         builder
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_afterword_notification)
             .setContentTitle(title.ifBlank { "有下文" })
             .setContentText(body)
             .setContentIntent(contentIntent)
@@ -978,7 +982,7 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
                         try {
                             Canvas(bitmap).drawColor(Color.WHITE)
                             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            bitmap.toJpegBase64()
+                            bitmap.toBoundedJpegBase64()
                         } finally {
                             bitmap.recycle()
                         }
@@ -989,9 +993,132 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
         }
     }
 
-    private fun Bitmap.toJpegBase64(): String {
+    private fun normalizeImage(call: MethodCall, result: MethodChannel.Result) {
+        val path = call.argument<String>("path").orEmpty()
+        val file = safePrivateFile(path)
+        if (file == null || file.extension.lowercase() !in NORMALIZABLE_IMAGE_EXTENSIONS) {
+            result.error("invalid_image", "Image path must point to a local app PNG, JPEG, WebP, or GIF.", null)
+            return
+        }
+        executor.execute {
+            try {
+                val normalized = normalizeImageFile(file)
+                mainHandler.post { result.success(normalized) }
+            } catch (error: IllegalArgumentException) {
+                mainHandler.post { result.error("invalid_image", error.message, null) }
+            } catch (error: Exception) {
+                mainHandler.post { result.error("image_normalization_failed", error.message, null) }
+            }
+        }
+    }
+
+    private fun normalizeImageFile(file: File): String {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("Unsupported or corrupt image.")
+        }
+        if (bounds.outMimeType !in NORMALIZABLE_IMAGE_MIME_TYPES) {
+            throw IllegalArgumentException("Unsupported image format.")
+        }
+        val sampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight)
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options)
+            ?: throw IllegalArgumentException("Unsupported or corrupt image.")
+        try {
+            val oriented = decoded.applyExifOrientation(file)
+            val bounded = oriented.scaleToImageBounds()
+            val canvasBitmap = Bitmap.createBitmap(bounded.width, bounded.height, Bitmap.Config.ARGB_8888)
+            try {
+                Canvas(canvasBitmap).drawColor(Color.WHITE)
+                Canvas(canvasBitmap).drawBitmap(bounded, 0f, 0f, null)
+                return canvasBitmap.toBoundedJpegBase64()
+            } finally {
+                canvasBitmap.recycle()
+                if (bounded !== oriented) bounded.recycle()
+                if (oriented !== decoded) oriented.recycle()
+            }
+        } finally {
+            decoded.recycle()
+        }
+    }
+
+    private fun sampleSizeFor(width: Int, height: Int): Int {
+        var sample = 1
+        while (
+            width / sample > MAX_IMAGE_DIMENSION ||
+            height / sample > MAX_IMAGE_DIMENSION ||
+            (width.toLong() / sample) * (height.toLong() / sample) > MAX_IMAGE_PIXELS
+        ) {
+            sample *= 2
+        }
+        return sample
+    }
+
+    private fun Bitmap.applyExifOrientation(file: File): Bitmap {
+        val orientation = readExifOrientation(file)
+        val matrix = Matrix()
+        when (orientation) {
+            EXIF_ROTATE_90 -> matrix.postRotate(90f)
+            EXIF_ROTATE_180 -> matrix.postRotate(180f)
+            EXIF_ROTATE_270 -> matrix.postRotate(270f)
+            EXIF_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+            EXIF_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+            EXIF_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            EXIF_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return this
+        }
+        return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+    }
+
+    private fun readExifOrientation(file: File): Int {
+        return try {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        } catch (_: Exception) {
+            EXIF_NORMAL
+        }
+    }
+
+    private fun Bitmap.scaleToImageBounds(): Bitmap {
+        val scale = min(
+            1.0,
+            min(
+                min(
+                    MAX_IMAGE_DIMENSION.toDouble() / width,
+                    MAX_IMAGE_DIMENSION.toDouble() / height,
+                ),
+                sqrt(MAX_IMAGE_PIXELS.toDouble() / (width.toDouble() * height)),
+            ),
+        )
+        if (scale >= 1.0) return this
+        val targetWidth = max(1, (width * scale).toInt())
+        val targetHeight = max(1, (height * scale).toInt())
+        return Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
+    }
+
+    private fun Bitmap.toBoundedJpegBase64(): String {
         val output = ByteArrayOutputStream()
-        compress(Bitmap.CompressFormat.JPEG, 82, output)
+        var quality = 82
+        do {
+            output.reset()
+            compress(Bitmap.CompressFormat.JPEG, quality, output)
+            quality -= 8
+        } while (output.size() > MAX_ENCODED_IMAGE_BYTES && quality >= 42)
+        if (output.size() > MAX_ENCODED_IMAGE_BYTES) {
+            throw IllegalArgumentException("Image exceeds normalized 1 MiB limit.")
+        }
         return android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
     }
 
@@ -1208,6 +1335,24 @@ class ReadlaterRuntime(private val app: ReadlaterApplication) {
         private const val MAX_FILE_BYTES = 50L * 1024L * 1024L
         private const val MAX_PDF_DIMENSION = 2000
         private const val MAX_PDF_PIXELS = 2_000_000
+        private const val MAX_IMAGE_DIMENSION = 2000
+        private const val MAX_IMAGE_PIXELS = 2_000_000
+        private const val MAX_ENCODED_IMAGE_BYTES = 1024 * 1024
         private const val MAX_RECENT_RUNTIME_EVENTS = 8
+        private val EXIF_NORMAL = ExifInterface.ORIENTATION_NORMAL
+        private val EXIF_FLIP_HORIZONTAL = ExifInterface.ORIENTATION_FLIP_HORIZONTAL
+        private val EXIF_ROTATE_180 = ExifInterface.ORIENTATION_ROTATE_180
+        private val EXIF_FLIP_VERTICAL = ExifInterface.ORIENTATION_FLIP_VERTICAL
+        private val EXIF_TRANSPOSE = ExifInterface.ORIENTATION_TRANSPOSE
+        private val EXIF_ROTATE_90 = ExifInterface.ORIENTATION_ROTATE_90
+        private val EXIF_TRANSVERSE = ExifInterface.ORIENTATION_TRANSVERSE
+        private val EXIF_ROTATE_270 = ExifInterface.ORIENTATION_ROTATE_270
+        private val NORMALIZABLE_IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif")
+        private val NORMALIZABLE_IMAGE_MIME_TYPES = setOf(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+        )
     }
 }

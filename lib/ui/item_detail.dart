@@ -9,10 +9,12 @@ import '../core/models.dart';
 import '../platform/native_bridge.dart';
 import '../services/knowledge_service.dart';
 import 'common.dart';
+import 'conversation_page.dart';
 import 'research_detail.dart';
 import 'item_actions.dart';
 import 'developer_page.dart';
 import 'reading_content.dart';
+import 'afterword_art.dart';
 
 class ArticleDetailPage extends StatefulWidget {
   const ArticleDetailPage({
@@ -66,6 +68,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage> {
           return const AppFrame(
             title: '阅读',
             child: EmptyState(
+              scene: 'item-missing',
               icon: Icons.delete_outline,
               title: '资料已移除',
               message: '这份资料已被永久删除。',
@@ -188,8 +191,25 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
         title: '阅读',
         actions: [
           IconButton(
+            tooltip: '问这篇资料',
+            icon: const AfterwordIcon(Icons.question_answer_outlined),
+            onPressed: item.isActive
+                ? () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ConversationPage(
+                        controller: controller,
+                        scope: ConversationScope.item,
+                        scopeId: item.id,
+                        sourceIds: [item.id],
+                        title: '问这篇资料',
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+          IconButton(
             tooltip: '重新分析',
-            icon: const Icon(Icons.auto_awesome_outlined),
+            icon: const AfterwordIcon(Icons.auto_awesome_outlined),
             onPressed:
                 item.isActive &&
                     controller.modelConfigured &&
@@ -204,7 +224,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
           if (item.kind == ItemKind.web)
             IconButton(
               tooltip: '重抓正文',
-              icon: const Icon(Icons.refresh_outlined),
+              icon: const AfterwordIcon(Icons.refresh_outlined),
               onPressed: item.isActive
                   ? () => runUiAction(
                       context,
@@ -215,7 +235,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
             ),
           IconButton(
             tooltip: '导出 Markdown',
-            icon: const Icon(Icons.download_outlined),
+            icon: const AfterwordIcon(Icons.download_outlined),
             onPressed: () => _exportMarkdown(context),
           ),
           ItemActionsMenu(controller: controller, items: [item]),
@@ -237,7 +257,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                       ExpansionTile(
                         tilePadding: EdgeInsets.zero,
                         title: Text('附件 · ${item.assets.length}'),
-                        leading: const Icon(Icons.attach_file),
+                        leading: const AfterwordIcon(Icons.attach_file),
                         children: [
                           AssetStrip(
                             assets: item.assets,
@@ -514,7 +534,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                 TextButton.icon(
                   onPressed: () =>
                       openDiagnostics(context, controller, entityId: item.id),
-                  icon: const Icon(Icons.receipt_long_outlined),
+                  icon: const AfterwordIcon(Icons.receipt_long_outlined),
                   label: const Text('查看任务日志'),
                 ),
                 if (item.kind == ItemKind.web &&
@@ -526,7 +546,7 @@ class _ArticleDetailViewState extends State<_ArticleDetailView> {
                       () => controller.retryImages(item.id),
                       success: '补图已提交',
                     ),
-                    icon: const Icon(Icons.image_search_outlined),
+                    icon: const AfterwordIcon(Icons.image_search_outlined),
                     label: const Text('重试补图'),
                   ),
               ],
@@ -588,7 +608,10 @@ class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.travel_explore_outlined, color: colors.primary),
+                AfterwordIcon(
+                  Icons.travel_explore_outlined,
+                  color: colors.primary,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -645,7 +668,7 @@ class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
                               dimension: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.open_in_browser_outlined),
+                          : const AfterwordIcon(Icons.open_in_browser_outlined),
                       label: const Text('打开页面保存'),
                     ),
                   OutlinedButton.icon(
@@ -655,7 +678,7 @@ class _WebRecoveryPanelState extends State<_WebRecoveryPanel> {
                             dimension: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.edit_note_outlined),
+                        : const AfterwordIcon(Icons.edit_note_outlined),
                     label: Text(needsRecovery ? '粘贴正文' : '补充正文'),
                   ),
                 ],
@@ -807,7 +830,7 @@ class _RevisionHistoryCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
-        leading: const Icon(Icons.history_outlined),
+        leading: const AfterwordIcon(Icons.history_outlined),
         title: Text('历史正文 · ${sorted.length}'),
         subtitle: const Text('重抓正文前保留的旧版本'),
         children: [
@@ -816,7 +839,7 @@ class _RevisionHistoryCard extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               title: Text('v${revision.version} · ${revision.title}'),
               subtitle: Text(shortDate(revision.savedAt)),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const AfterwordIcon(Icons.chevron_right),
               onTap: () => _openRevision(context, revision),
             ),
         ],
@@ -1055,7 +1078,7 @@ class _PdfInlineReaderState extends State<_PdfInlineReader> {
             Text('PDF 第 $_page/${widget.item.pdfPageCount ?? '?'} 页'),
             OutlinedButton.icon(
               onPressed: _page <= 1 ? null : () => _goTo(_page - 1),
-              icon: const Icon(Icons.chevron_left),
+              icon: const AfterwordIcon(Icons.chevron_left),
               label: const Text('上一页'),
             ),
             OutlinedButton.icon(
@@ -1064,17 +1087,17 @@ class _PdfInlineReaderState extends State<_PdfInlineReader> {
                       _page >= widget.item.pdfPageCount!
                   ? null
                   : () => _goTo(_page + 1),
-              icon: const Icon(Icons.chevron_right),
+              icon: const AfterwordIcon(Icons.chevron_right),
               label: const Text('下一页'),
             ),
             TextButton.icon(
               onPressed: () => _jump(context),
-              icon: const Icon(Icons.search_outlined),
+              icon: const AfterwordIcon(Icons.search_outlined),
               label: const Text('跳页'),
             ),
             TextButton.icon(
               onPressed: () => widget.onPageNote(_page),
-              icon: const Icon(Icons.note_add_outlined),
+              icon: const AfterwordIcon(Icons.note_add_outlined),
               label: const Text('页笔记'),
             ),
           ],
@@ -1168,7 +1191,7 @@ class _ReaderBlock extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.only(top: 7 * fontScale, right: 8),
-            child: const Icon(Icons.circle, size: 6),
+            child: const AfterwordIcon(Icons.circle, size: 6, asset: 'bullet'),
           ),
           Expanded(child: SelectableText(text, style: style)),
         ],
@@ -1184,13 +1207,13 @@ class _ReaderBlock extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: IconButton(
               tooltip: '高亮本段',
-              icon: const Icon(Icons.border_color_outlined),
+              icon: const AfterwordIcon(Icons.border_color_outlined),
               onPressed: text.trim().isEmpty ? null : onHighlight,
             ),
           ),
           if (page is int)
             TextButton.icon(
-              icon: const Icon(Icons.note_add_outlined),
+              icon: const AfterwordIcon(Icons.note_add_outlined),
               label: Text('PDF 第 $page 页笔记'),
               onPressed: () => onPageNote(page),
             ),
@@ -1271,7 +1294,7 @@ class _NotesCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
-              icon: const Icon(Icons.save_outlined),
+              icon: const AfterwordIcon(Icons.save_outlined),
               label: const Text('保存笔记'),
               onPressed: () => runUiAction(context, onSave, success: '笔记已保存'),
             ),
@@ -1283,7 +1306,7 @@ class _NotesCard extends StatelessWidget {
             for (final annotation in item.annotations)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(
+                leading: AfterwordIcon(
                   annotation.anchor.pdfPage == null
                       ? Icons.border_color_outlined
                       : Icons.picture_as_pdf_outlined,
@@ -1306,7 +1329,7 @@ class _NotesCard extends StatelessWidget {
                 ),
                 trailing: IconButton(
                   tooltip: '编辑批注',
-                  icon: const Icon(Icons.edit_note_outlined),
+                  icon: const AfterwordIcon(Icons.edit_note_outlined),
                   onPressed: () => _editAnnotation(context, annotation),
                 ),
               ),
@@ -1404,13 +1427,14 @@ class _AnalysisSection extends StatelessWidget {
       return Padding(
         padding: EdgeInsets.zero,
         child: EmptyState(
+          scene: 'unanalyzed',
           icon: Icons.auto_awesome_outlined,
           title: '还没有观点卡片',
           message: controller.modelConfigured
               ? '可以对这条资料做总结、关联和研究建议。'
               : '先在设置中配置模型，再进行分析。',
           action: FilledButton.icon(
-            icon: const Icon(Icons.auto_awesome),
+            icon: const AfterwordIcon(Icons.auto_awesome),
             label: const Text('开始分析'),
             onPressed: item.isActive && controller.modelConfigured
                 ? () => runUiAction(
@@ -1490,7 +1514,7 @@ class _AnalysisSection extends StatelessWidget {
                   for (final insight in analysis.insights)
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.lightbulb_outline),
+                      leading: const AfterwordIcon(Icons.lightbulb_outline),
                       title: Text(
                         readerCitationText(
                           insight,
@@ -1662,7 +1686,7 @@ class _QuestionRow extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: FilledButton.icon(
                 onPressed: enabled ? onConfirm : null,
-                icon: const Icon(Icons.travel_explore_outlined),
+                icon: const AfterwordIcon(Icons.travel_explore_outlined),
                 label: const Text('确认研究'),
               ),
             ),
@@ -1799,7 +1823,7 @@ class _StructuredInsightTile extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        AfterwordIcon(
                           Icons.rate_review_outlined,
                           size: 18,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1925,10 +1949,12 @@ class _EvidenceLine extends StatelessWidget {
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.format_quote),
+      leading: const AfterwordIcon(Icons.format_quote),
       title: Text('$label · $location'),
       subtitle: quote.isEmpty ? null : Text(quote),
-      trailing: sourceId.isEmpty ? null : const Icon(Icons.chevron_right),
+      trailing: sourceId.isEmpty
+          ? null
+          : const AfterwordIcon(Icons.chevron_right),
       onTap: sourceId.isEmpty ? null : () => _openEvidence(context, sourceId),
     );
   }

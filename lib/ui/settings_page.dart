@@ -7,6 +7,7 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import 'common.dart';
 import 'developer_page.dart';
+import 'afterword_art.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.controller, required this.data});
@@ -24,6 +25,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _endpoint;
   late final TextEditingController _textModel;
   late final TextEditingController _visionModel;
+  late final TextEditingController _conversationCallLimit;
+  late final TextEditingController _modelTextContextChars;
   late final TextEditingController _apiKey;
   late final TextEditingController _searchEndpoint;
   late final TextEditingController _searchKey;
@@ -38,6 +41,12 @@ class _SettingsPageState extends State<SettingsPage> {
     _endpoint = TextEditingController(text: settings.endpoint);
     _textModel = TextEditingController(text: settings.textModel);
     _visionModel = TextEditingController(text: settings.visionModel);
+    _conversationCallLimit = TextEditingController(
+      text: '${settings.conversationCallLimit}',
+    );
+    _modelTextContextChars = TextEditingController(
+      text: '${settings.modelTextContextChars}',
+    );
     _apiKey = TextEditingController();
     _searchEndpoint = TextEditingController(text: settings.searchEndpoint);
     _searchKey = TextEditingController();
@@ -56,6 +65,8 @@ class _SettingsPageState extends State<SettingsPage> {
       _endpoint,
       _textModel,
       _visionModel,
+      _conversationCallLimit,
+      _modelTextContextChars,
       _apiKey,
       _searchEndpoint,
       _searchKey,
@@ -75,7 +86,7 @@ class _SettingsPageState extends State<SettingsPage> {
       actions: [
         IconButton(
           tooltip: '开发者日志',
-          icon: const Icon(Icons.receipt_long_outlined),
+          icon: const AfterwordIcon(Icons.receipt_long_outlined),
           onPressed: () => openDiagnostics(context, widget.controller),
         ),
       ],
@@ -108,12 +119,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.schedule),
+                  leading: const AfterwordIcon(Icons.schedule),
                   title: const Text('汇总时间'),
                   subtitle: Text(
                     '${_two(widget.data.settings.digestHour)}:${_two(widget.data.settings.digestMinute)}',
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const AfterwordIcon(Icons.chevron_right),
                   onTap: () => _pickDigestTime(context),
                 ),
                 SwitchListTile(
@@ -214,6 +225,24 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 10),
                 TextField(
+                  controller: _conversationCallLimit,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '对话调用上限',
+                    helperText: '1–20 次；停止/重试会保留已用次数。',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _modelTextContextChars,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '单次模型文本预算',
+                    helperText: '8000–64000 字符，用于长资料分段读取。',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
                   controller: _apiKey,
                   obscureText: true,
                   decoration: InputDecoration(
@@ -280,17 +309,17 @@ class _SettingsPageState extends State<SettingsPage> {
           SectionCard(
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.code_outlined),
+              leading: const AfterwordIcon(Icons.code_outlined),
               title: const Text('开发者'),
               subtitle: const Text('任务日志、交互调试与导出'),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const AfterwordIcon(Icons.chevron_right),
               onTap: () => openDiagnostics(context, widget.controller),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             child: FilledButton.icon(
-              icon: const Icon(Icons.save_outlined),
+              icon: const AfterwordIcon(Icons.save_outlined),
               label: const Text('保存设置'),
               onPressed: () => _save(context),
             ),
@@ -369,7 +398,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ReadingPreset.compact => '紧凑列表 · 清晰状态 · 正文不缩小',
                     ReadingPreset.magazine => '醒目标题 · 章节色面 · 丰富留白',
                   }),
-                  trailing: Icon(
+                  trailing: AfterwordIcon(
                     selected == preset
                         ? Icons.check_circle
                         : Icons.circle_outlined,
@@ -426,7 +455,7 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined),
+              const AfterwordIcon(Icons.inventory_2_outlined),
               const SizedBox(width: 12),
               const Expanded(child: Text('本地备份与恢复')),
               OutlinedButton(
@@ -438,7 +467,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
           Row(
             children: [
-              const Icon(Icons.restore_outlined),
+              const AfterwordIcon(Icons.restore_outlined),
               const SizedBox(width: 12),
               const Expanded(child: Text('从 ZIP 恢复资料库')),
               FilledButton(
@@ -458,6 +487,12 @@ class _SettingsPageState extends State<SettingsPage> {
       'endpoint': _endpoint.text.trim(),
       'textModel': _textModel.text.trim(),
       'visionModel': _visionModel.text.trim(),
+      'conversationCallLimit':
+          int.tryParse(_conversationCallLimit.text.trim()) ??
+          widget.controller.data.settings.conversationCallLimit,
+      'modelTextContextChars':
+          int.tryParse(_modelTextContextChars.text.trim()) ??
+          widget.controller.data.settings.modelTextContextChars,
       'searchEndpoint': _searchEndpoint.text.trim(),
       'customInstructions': _instructions.text.trim(),
       'explicitInterests': _lines(_explicit.text),
@@ -583,6 +618,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _endpoint.text = settings.endpoint;
     _textModel.text = settings.textModel;
     _visionModel.text = settings.visionModel;
+    _conversationCallLimit.text = '${settings.conversationCallLimit}';
+    _modelTextContextChars.text = '${settings.modelTextContextChars}';
     _searchEndpoint.text = settings.searchEndpoint;
     _instructions.text = settings.customInstructions;
     _explicit.text = settings.explicitInterests.join('\n');
@@ -625,7 +662,7 @@ class _NotificationPermissionRow extends StatelessWidget {
       children: [
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(
+          leading: AfterwordIcon(
             allowed == true
                 ? Icons.notifications_active_outlined
                 : Icons.notifications_off_outlined,

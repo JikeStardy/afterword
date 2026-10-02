@@ -593,6 +593,10 @@ extension PersonalController on AppController {
 
   Future<void> retryJob(String jobId) async {
     final job = runtime.jobs.firstWhere((j) => j.id == jobId);
+    if (job.type == 'conversation') {
+      await retryTurn(job.entityId);
+      return;
+    }
     if (job.status == 'running') return;
     if (job.checkpoint['sourceReplaced'] == true) {
       throw StateError('正文已补全，旧任务不能重试；请从资料页提交新的任务');

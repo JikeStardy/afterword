@@ -190,6 +190,7 @@ class LocalStore {
         }
       }
     }
+    _validateRestoredKnowledgeGraph(restored);
     _removeExpiredTrash(restored);
     // Give imported assets new immutable names. A failed restore never alters
     // originals belonging to the currently committed database snapshot.
@@ -257,6 +258,73 @@ class LocalStore {
     }
     for (final run in data.runs) {
       if (run.status == 'running') run.status = 'interrupted';
+    }
+    for (final turn in data.conversationTurns) {
+      if (turn.status == 'queued' || turn.status == 'running') {
+        turn.status = 'interrupted';
+        turn.error = turn.error.isEmpty ? '恢复后需重新提交本轮对话' : turn.error;
+      }
+    }
+  }
+
+  void _validateRestoredKnowledgeGraph(AppData data) {
+    void requireUnique(Iterable<String> values, String message) {
+      final seen = <String>{};
+      for (final value in values) {
+        if (value.isEmpty || !seen.add(value)) throw FormatException(message);
+      }
+    }
+
+    requireUnique(data.conversations.map((c) => c.id), '重复会话编号');
+    requireUnique(data.conversationTurns.map((t) => t.id), '重复会话轮次编号');
+    requireUnique(data.segmentSummaries.map((s) => s.id), '重复摘要编号');
+    requireUnique(data.knowledgeProposals.map((p) => p.id), '重复知识提案编号');
+    requireUnique(data.knowledgeRevisions.map((r) => r.id), '重复知识修订编号');
+
+    final conversationIds = data.conversations.map((c) => c.id).toSet();
+    for (final turn in data.conversationTurns) {
+      if (!conversationIds.contains(turn.conversationId)) {
+        throw const FormatException('会话轮次缺少所属会话');
+      }
+    }
+
+    final topicIds = data.topics.map((t) => t.id).toSet();
+    final revisionIds = data.knowledgeRevisions.map((r) => r.id).toSet();
+    for (final topic in data.topics) {
+      final revisionId = topic.currentKnowledgeRevisionId;
+      if (revisionId != null && !revisionIds.contains(revisionId)) {
+        throw const FormatException('主题指向不存在的知识修订');
+      }
+    }
+    for (final proposal in data.knowledgeProposals) {
+      final topicId = proposal.topicId;
+      if (topicId != null && !topicIds.contains(topicId)) {
+        throw const FormatException('知识提案指向不存在的主题');
+      }
+      for (final relatedTopicId in proposal.relatedTopicIds) {
+        if (!topicIds.contains(relatedTopicId)) {
+          throw const FormatException('知识提案关联不存在的主题');
+        }
+      }
+      final acceptedRevisionId = proposal.acceptedRevisionId;
+      if (acceptedRevisionId != null &&
+          !revisionIds.contains(acceptedRevisionId)) {
+        throw const FormatException('知识提案指向不存在的已接受修订');
+      }
+    }
+    for (final revision in data.knowledgeRevisions) {
+      if (!topicIds.contains(revision.topicId)) {
+        throw const FormatException('知识修订指向不存在的主题');
+      }
+      for (final relatedTopicId in revision.relatedTopicIds) {
+        if (!topicIds.contains(relatedTopicId)) {
+          throw const FormatException('知识修订关联不存在的主题');
+        }
+      }
+      final parentId = revision.parentId;
+      if (parentId != null && !revisionIds.contains(parentId)) {
+        throw const FormatException('知识修订父级不存在');
+      }
     }
   }
 

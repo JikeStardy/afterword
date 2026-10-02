@@ -1,6 +1,6 @@
 // Local deterministic protocol fixture. It never contacts a model or search vendor.
 import http from 'node:http';
-const counts = { analysis: 0, research: 0, search: 0, synthesis: 0 };
+const counts = { analysis: 0, research: 0, search: 0, synthesis: 0, sourceSummary: 0, pdfSummary: 0, sourceMerge: 0 };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAQklEQVR4nO3OMQ0AIBAAsXfHiBD877jgGJpUQGed/ZXJB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhIQeu13nCYghyLU9AAAAAElFTkSuQmCC', 'base64');
 function pdf() {
   const stream = 'BT /F1 20 Tf 40 120 Td (Readlater local PDF evidence) Tj ET';
@@ -42,11 +42,25 @@ const server = http.createServer(async (req, res) => {
     const content = body.messages.at(-1).content;
     const text = Array.isArray(content) ? content[0].text : content;
     let result;
-    if (text.includes('生成观点卡片')) {
+    if (text.includes('"task":"summarize_source_segment"')) {
+      counts.sourceSummary++;
+      result = {summary: '中立摘要：资料片段要求保留原始来源，并区分资料主张和个人推断。'};
+    } else if (text.includes('"task":"summarize_pdf_pages"')) {
+      counts.pdfSummary++;
+      result = {summary: '中立摘要：PDF 页面展示本地验证资料，需打开原始页图核对。'};
+    } else if (text.includes('"task":"merge_source_segment_summaries"')) {
+      counts.sourceMerge++;
+      result = {summary: '合并摘要：原始资料与推断应分开保存，保留可核对的来源。'};
+    } else if (text.includes('生成观点卡片')) {
       counts.analysis++;
       const marker = '\n输入数据：';
       const input = JSON.parse(text.slice(text.indexOf(marker) + marker.length));
       result = {summary:'收藏只有带着问题阅读，才能逐渐形成认识。',insights:[`保留来源与适用条件 [${input.item.id}]`],connections: input.related.length ? ['与已有笔记相互补充'] : ['目前没有相关的本地资料'],questions:['如何验证笔记方法的适用范围？'],sourceIds:[input.item.id],suggestedTopics:['个人知识管理']};
+      const block = input.item.contentBlocks?.find(block => block.text?.trim());
+      const evidence = input.availableEvidence !== undefined
+        ? input.availableEvidence.slice(0, 1)
+        : block ? [{sourceId: input.item.id, sourceVersion: input.item.contentVersion, blockId: block.id, quote: block.text}] : [];
+      result.structuredInsights = evidence.length ? [{id: `fixture-${input.item.id}`, title: '保留来源与适用条件', finding: '原始资料是核对观点的依据。', evidence, unknowns: ['实际效果仍需验证。']}] : [];
     } else if (text.includes('仅基于以下本地资料')) {
       counts.synthesis++;
       const input = JSON.parse(text.slice(text.lastIndexOf('\n{') + 1));
@@ -60,4 +74,4 @@ const server = http.createServer(async (req, res) => {
   }
   send(404,'text/plain','not found');
 });
-server.listen(18765, '127.0.0.1', () => console.log('Readlater local fixture listening on 127.0.0.1:18765'));
+server.listen(Number(process.env.READLATER_FIXTURE_PORT ?? 18765), '127.0.0.1', () => console.log(`Readlater local fixture listening on 127.0.0.1:${server.address().port}`));

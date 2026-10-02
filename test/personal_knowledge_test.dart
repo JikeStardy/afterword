@@ -51,6 +51,14 @@ class ScopedIntelligence extends IntelligenceService {
 
 class SummaryEvidenceIntelligence extends IntelligenceService {
   @override
+  Future<Json> complete(
+    AppSettings settings,
+    String key,
+    String prompt, {
+    List<String> imageDataUrls = const [],
+    Future<void>? abortTrigger,
+  }) async => {'summary': 'SYNTHETIC_SUMMARY'};
+  @override
   Future<Analysis> analyze(
     AppSettings settings,
     String key,

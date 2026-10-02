@@ -231,7 +231,7 @@ void main() {
     );
 
     final copy = AppData.fromJson(data.toJson());
-    expect(copy.toJson()['version'], 3);
+    expect(copy.toJson()['version'], 4);
     expect(copy.items.single.workState, WorkState.snoozed);
     expect(copy.items.single.readCount, 9);
     expect(
@@ -273,7 +273,7 @@ void main() {
 
       expect(migrated.items.single.readCount, 12);
       expect(migrated.items.single.workState, WorkState.pending);
-      expect(migrated.toJson()['version'], 3);
+      expect(migrated.toJson()['version'], 4);
     },
   );
 

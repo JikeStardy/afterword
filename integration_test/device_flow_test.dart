@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -159,6 +160,13 @@ void main() {
       final pdfItem = await controller.importFile(pdf.path);
       await controller.waitForIdle();
       expect(pdfItem.status, 'ready');
+      final pdfEvidence =
+          pdfItem.analysis!.structuredInsights.single.evidence.single;
+      expect(pdfEvidence.sourceId, pdfItem.id);
+      expect(pdfEvidence.sourceVersion, pdfItem.contentVersion);
+      expect(pdfEvidence.pdfPage, 1);
+      expect(pdfEvidence.assetFingerprint, sha256.convert(pdfBytes).toString());
+      expect(pdfEvidence.unresolved, isTrue);
       final image = await File(
         '${directory.path}/fixture.png',
       ).writeAsBytes((await http.get(Uri.parse('$base/image.png'))).bodyBytes);
@@ -231,6 +239,40 @@ void main() {
       );
       expect(find.text(article.analysis!.summary), findsOneWidget);
       await screenshot('reader-analysis');
+
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              ArticleDetailPage(controller: controller, item: pdfItem),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('证据 · 1').first,
+        250,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView).first,
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.text('证据 · 1').first);
+      await tester.pumpAndSettle();
+      final pdfSource = find.textContaining('PDF 第 1 页 · 图像转录，待核对');
+      await tester.ensureVisible(pdfSource);
+      await tester.tap(pdfSource);
+      await tester.pumpAndSettle();
+      expect(find.text('PDF 第 1/1 页'), findsOneWidget);
+      final pageImage = find.byType(RawImage).hitTestable();
+      expect(pageImage, findsOneWidget);
+      expect(tester.widget<RawImage>(pageImage).image, isNotNull);
+      expect(find.textContaining('PDF 渲染失败'), findsNothing);
+      await screenshot('pdf-evidence-page');
+      navigator.pop();
+      await tester.pumpAndSettle();
+      navigator.pop();
+      await tester.pumpAndSettle();
 
       openDiagnostics(
         tester.element(find.byType(ArticleDetailPage)),
@@ -421,6 +463,7 @@ void main() {
           'screens': [
             'library.png',
             'reader-analysis.png',
+            'pdf-evidence-page.png',
             'developer-task.png',
             'restored-archives.png',
           ],

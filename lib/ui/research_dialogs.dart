@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
+import 'afterword_art.dart';
 
 Future<(String, String)?> showTopicDialog(
   BuildContext context, {
@@ -69,6 +70,7 @@ Future<ResearchInput?> showResearchDialog(
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String?>(
+              icon: const AfterwordIcon(Icons.arrow_drop_down),
               initialValue: topicId,
               decoration: const InputDecoration(labelText: '关联主题'),
               items: [
@@ -189,6 +191,7 @@ Future<ContextEntryInput?> showContextEntryDialog(
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
+              icon: const AfterwordIcon(Icons.arrow_drop_down),
               initialValue: selectedKind,
               decoration: const InputDecoration(labelText: '类型'),
               items: const [
