@@ -234,8 +234,11 @@ class IntelligenceService {
         'availableEvidence': availableEvidence.map((e) => e.toJson()).toList(),
       'preferences': preferences(settings),
       'item': {
-        ...KnowledgeService.itemPayload(item),
-        'content': item.body,
+        ...KnowledgeService.itemPayload(
+          item,
+          clipChars: availableEvidence == null ? null : 0,
+        ),
+        if (availableEvidence != null) 'content': item.body,
         'feedback': item.feedback,
         'attentionNotAgreement': {
           'reads': item.readCount,
@@ -245,8 +248,16 @@ class IntelligenceService {
       'related': related
           .map(
             (r) => {
-              ...KnowledgeService.itemPayload(r, clipChars: 4000),
-              'content': r.analysis?.summary ?? _clip(r.body, 4000),
+              ...KnowledgeService.itemPayload(
+                r,
+                clipChars: r.analysis == null ? 4000 : 2000,
+              ),
+              if (r.analysis != null)
+                'content': r.analysis!.summary.length > 2000
+                    ? r.analysis!.summary.substring(0, 2000)
+                    : r.analysis!.summary,
+              if ((r.analysis?.summary.length ?? 0) > 2000)
+                'contentTruncated': true,
               'notes': r.notes,
               'feedback': r.feedback,
               'attentionNotAgreement': {
@@ -264,6 +275,7 @@ class IntelligenceService {
       '同时返回structuredInsights数组，每条包含title、finding、change、impact、unknowns、evidence；title写12到24个中文字符，不要截断原句伪装标题。'
       'evidence必须使用提供的sourceId、contentVersion和contentBlocks里的blockId；PDF可使用pdfPage。'
       '无法定位时设置unresolved:true并保留quote，不得编造段落或页码。'
+      '原文只在contentBlocks中提供；contentTruncated表示仅提供节选，不得推断未提供的部分。历史content是已有分析摘要，不能当作原文证据。'
       '如果提供availableEvidence，当前content是中间分析而不是原文；evidence只能原样选用availableEvidence，不能增加或修改摘录、页码、段落、版本及核验状态。没有可用证据时structuredInsights留空，仍可在summary和insights总结。'
       'connections比较与已有资料、笔记和已确认背景的新增、重复、冲突；没有相关资料时明确说明。questions为可由用户确认的下一步研究建议。'
       'suggestedTopics最多3个兴趣方向，不能把阅读解释为立场认同。'
@@ -329,6 +341,7 @@ class IntelligenceService {
       key,
       '仅基于以下本地资料、用户笔记和已纳入背景，为研究问题生成综合分析，明确共识、冲突、适用条件、相对已有认识的变化、个人影响与未知。'
       '不得宣称已开展外部搜索。背景中的未确认个人判断只能作为待确认线索，不能当成事实。'
+      'contentTruncated表示该资料的原文仅提供节选，不能将缺少的内容当作不存在；已有analysis是模型分析，不能当作原文。'
       '返回 {"presentation":{"brief":"80到120字导读","sections":[{"title":"小标题","body":"连续正文，带[id]引用"}]}, "sourceIds":["实际资料id"], "staleInputs":["过时或需更新的context id"]}。sections必须包含完整的综述正文和重要限制；导读不能代替正文，无需另写重复全文。'
       '\n${jsonEncode({
         'question': topic.question,

@@ -63,41 +63,60 @@ class KnowledgeService {
     };
   }
 
-  static Json itemPayload(LibraryItem item, {int clipChars = 8000}) => {
-    'id': item.id,
-    'title': item.title,
-    'kind': item.kind.name,
-    'url': item.url,
-    'notes': item.notes,
-    'annotations': item.annotations
-        .map((annotation) => annotation.toJson())
-        .toList(),
-    'feedback': item.feedback,
-    'contentVersion': contentVersionForItem(item),
-    if (item.pdfPageCount != null) 'pdfPageCount': item.pdfPageCount,
-    if (item.pdfPageCount != null)
-      'providedPdfPages': {
-        'first': item.pdfPageStart,
-        'last': item.pdfPageEnd ?? item.pdfPageCount,
-      },
-    'contentBlocks': contentBlocksForItem(item)
-        .map(
-          (block) => {
-            'id': block['id'],
-            'kind': block['kind'],
-            if (block['level'] != null) 'level': block['level'],
-            if (block['page'] != null) 'page': block['page'],
-            'text': _clip((block['text'] as String? ?? '').trim(), clipChars),
-            if ((block['sourceContext'] as String? ?? '').isNotEmpty)
-              'sourceContext': block['sourceContext'],
-            if ((block['imageUrl'] as String? ?? '').isNotEmpty)
-              'imageUrl': block['imageUrl'],
-            if ((block['assetPath'] as String? ?? '').isNotEmpty)
-              'assetPath': block['assetPath'],
-          },
-        )
-        .toList(),
-  };
+  static Json itemPayload(LibraryItem item, {int? clipChars = 8000}) {
+    var remaining = clipChars;
+    var truncated = false;
+    final blocks = <Json>[];
+    // The budget belongs to the whole source, not to each paragraph. Null is
+    // reserved for the current article, whose segmentation is caller-owned.
+    for (final block in contentBlocksForItem(item)) {
+      if (remaining == 0) {
+        truncated = true;
+        break;
+      }
+      var text = (block['text'] as String? ?? '').trim();
+      if (remaining != null) {
+        if (text.length > remaining) {
+          text = text.substring(0, remaining);
+          truncated = true;
+        }
+        remaining -= text.length;
+      }
+      blocks.add({
+        'id': block['id'],
+        'kind': block['kind'],
+        if (block['level'] != null) 'level': block['level'],
+        if (block['page'] != null) 'page': block['page'],
+        'text': text,
+        if ((block['sourceContext'] as String? ?? '').isNotEmpty)
+          'sourceContext': block['sourceContext'],
+        if ((block['imageUrl'] as String? ?? '').isNotEmpty)
+          'imageUrl': block['imageUrl'],
+        if ((block['assetPath'] as String? ?? '').isNotEmpty)
+          'assetPath': block['assetPath'],
+      });
+    }
+    return {
+      'id': item.id,
+      'title': item.title,
+      'kind': item.kind.name,
+      'url': item.url,
+      'notes': item.notes,
+      'annotations': item.annotations
+          .map((annotation) => annotation.toJson())
+          .toList(),
+      'feedback': item.feedback,
+      'contentVersion': contentVersionForItem(item),
+      if (item.pdfPageCount != null) 'pdfPageCount': item.pdfPageCount,
+      if (item.pdfPageCount != null)
+        'providedPdfPages': {
+          'first': item.pdfPageStart,
+          'last': item.pdfPageEnd ?? item.pdfPageCount,
+        },
+      'contentBlocks': blocks,
+      if (truncated) 'contentTruncated': true,
+    };
+  }
 
   static List<Json> contextEntriesForTopic(
     Topic topic, {
@@ -445,9 +464,6 @@ class KnowledgeService {
     if (value is! List || value.isEmpty) return '无';
     return value.map((entry) => entry.toString()).join('；');
   }
-
-  static String _clip(String text, int max) =>
-      text.length <= max ? text : '${text.substring(0, max)}\n[节选]';
 
   static String encodeMarkdownFileName(String title, String fallback) {
     final normalized = title

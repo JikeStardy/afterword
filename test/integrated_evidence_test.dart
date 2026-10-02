@@ -244,9 +244,7 @@ void main() {
             final input =
                 jsonDecode(prompt.split('输入数据：').last) as Map<String, dynamic>;
             final item = input['item'] as Map<String, dynamic>;
-            final isFinal = (item['content'] as String).contains(
-              'Generated summary',
-            );
+            final isFinal = input.containsKey('availableEvidence');
             Map<String, dynamic> anchor;
             if (isFinal) {
               finalInput = input;
