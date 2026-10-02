@@ -1,6 +1,6 @@
 // Local deterministic protocol fixture. It never contacts a model or search vendor.
 import http from 'node:http';
-const counts = { analysis: 0, research: 0, search: 0, synthesis: 0, sourceSummary: 0, pdfSummary: 0, sourceMerge: 0 };
+const counts = { analysis: 0, research: 0, search: 0, synthesis: 0, sourceSummary: 0, pdfSummary: 0, sourceMerge: 0, dialogue: 0 };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAQklEQVR4nO3OMQ0AIBAAsXfHiBD877jgGJpUQGed/ZXJB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhIQeu13nCYghyLU9AAAAAElFTkSuQmCC', 'base64');
 function pdf() {
   const stream = 'BT /F1 20 Tf 40 120 Td (Readlater local PDF evidence) Tj ET';
@@ -51,6 +51,21 @@ const server = http.createServer(async (req, res) => {
     } else if (text.includes('"task":"merge_source_segment_summaries"')) {
       counts.sourceMerge++;
       result = {summary: '合并摘要：原始资料与推断应分开保存，保留可核对的来源。'};
+    } else if (text.includes('本地知识库对话')) {
+      counts.dialogue++;
+      const marker = '\n输入数据：';
+      const input = JSON.parse(text.slice(text.indexOf(marker) + marker.length));
+      const window = input.windows?.[0];
+      result = {
+        answer: '新资料提示保留原始出处，并区分资料主张与个人推断；这是待确认的认识。',
+        evidence: window ? [{
+          sourceId: window.sourceId, sourceVersion: window.sourceVersion,
+          blockId: window.blockId, windowId: window.id,
+          start: window.start, end: window.end, quote: window.text,
+        }] : [],
+        remainingGaps: ['实践效果仍需核对。'],
+        proposals: [],
+      };
     } else if (text.includes('生成观点卡片')) {
       counts.analysis++;
       const marker = '\n输入数据：';

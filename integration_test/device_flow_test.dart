@@ -133,19 +133,46 @@ void main() {
       )['analysis'];
       expect(after, before);
       expect(controller.data.entries.length, 2);
-      await controller.selectEntry(controller.data.entries.last.id);
+      final selectedEntryId = controller.data.entries.last.id;
+      await controller.selectEntry(selectedEntryId);
       await controller.waitForIdle();
       expect(controller.data.items.length, 2);
+      final selectedItemId = controller.data.entries
+          .singleWhere((entry) => entry.id == selectedEntryId)
+          .savedItemId;
+      expect(selectedItemId, isNotNull);
       final discovered = controller.data.topics.singleWhere(
         (topic) => topic.automatic,
       );
       expect(discovered.title, '个人知识管理');
-      expect(discovered.status, 'ready');
-      expect(discovered.overview, isNotEmpty);
+      expect(discovered.status, 'idle');
+      expect(discovered.overview, isEmpty);
+      final proposal = controller.data.knowledgeProposals.singleWhere(
+        (proposal) =>
+            proposal.topicId == discovered.id &&
+            proposal.originSourceId == selectedItemId,
+      );
+      expect(proposal.status, 'pending');
+      expect(proposal.presentation.brief, isNotEmpty);
+      expect(proposal.evidence, isNotEmpty);
+      expect(proposal.evidence.first.sourceId, selectedItemId);
+      expect(discovered.currentKnowledgeRevisionId, isNull);
+      expect(controller.data.knowledgeRevisions, isEmpty);
       expect(
         discovered.sourceIds,
         containsAll(controller.data.items.map((item) => item.id)),
       );
+      expect(
+        jsonDecode((await http.get(Uri.parse('$base/stats'))).body)['search'],
+        initialSearchCount,
+      );
+      await controller.queueSynthesis(discovered.id);
+      await controller.waitForIdle();
+      final refreshed = controller.data.topics.singleWhere(
+        (topic) => topic.id == discovered.id,
+      );
+      expect(refreshed.status, 'ready', reason: refreshed.error);
+      expect(refreshed.overview, isNotEmpty);
       expect(
         jsonDecode((await http.get(Uri.parse('$base/stats'))).body)['search'],
         initialSearchCount,
@@ -257,11 +284,17 @@ void main() {
             )
             .first,
       );
-      await tester.tap(find.text('证据 · 1').first);
+      await Scrollable.ensureVisible(
+        tester.element(find.text('证据 · 1').first),
+        alignment: .5,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('证据 · 1').hitTestable().first);
       await tester.pumpAndSettle();
       final pdfSource = find.textContaining('PDF 第 1 页 · 图像转录，待核对');
-      await tester.ensureVisible(pdfSource);
-      await tester.tap(pdfSource);
+      await Scrollable.ensureVisible(tester.element(pdfSource), alignment: .5);
+      await tester.pumpAndSettle();
+      await tester.tap(pdfSource.hitTestable());
       await tester.pumpAndSettle();
       expect(find.text('PDF 第 1/1 页'), findsOneWidget);
       final pageImage = find.byType(RawImage).hitTestable();

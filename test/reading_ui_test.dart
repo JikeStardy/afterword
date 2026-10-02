@@ -461,6 +461,68 @@ void main() {
     },
   );
 
+  testWidgets(
+    'pdf evidence keeps page location when transcript is unresolved',
+    (tester) async {
+      final item = LibraryItem(
+        id: 'pdf-article',
+        title: 'PDF 证据资料',
+        kind: ItemKind.pdf,
+        assets: [
+          Asset(
+            path: '/tmp/missing.pdf',
+            name: 'missing.pdf',
+            mime: 'application/pdf',
+          ),
+        ],
+        analysis: Analysis(
+          structuredInsights: [
+            Insight(
+              id: 'pdf-proof',
+              finding: 'PDF 页码证据应保持可见。',
+              evidence: [
+                EvidenceAnchor(
+                  sourceId: 'pdf-article',
+                  sourceVersion: 1,
+                  assetFingerprint: 'asset-fingerprint',
+                  pdfPage: 1,
+                  quote: '第一页图像转录',
+                  unresolved: true,
+                ),
+                EvidenceAnchor(
+                  sourceId: 'pdf-article',
+                  quote: '无法定位摘录',
+                  unresolved: true,
+                ),
+                EvidenceAnchor(
+                  sourceId: 'pdf-article',
+                  blockId: 'unverified-block',
+                  quote: '未核验段落摘录',
+                  unresolved: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final controller = _controller(AppData(items: [item]));
+
+      await tester.pumpWidget(
+        _wrap(ArticleDetailPage(controller: controller, item: item)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('证据 · 3'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('PDF 第 1 页 · 图像转录，待核对'), findsOneWidget);
+      expect(find.textContaining('无法定位，保留摘录'), findsNWidgets(2));
+      expect(find.textContaining('段落 unverified-block'), findsNothing);
+      expect(find.textContaining('第一页图像转录'), findsOneWidget);
+      expect(find.textContaining('无法定位摘录'), findsOneWidget);
+      expect(find.textContaining('未核验段落摘录'), findsOneWidget);
+    },
+  );
+
   testWidgets('duplicate insight ids keep stable unique UI keys', (
     tester,
   ) async {

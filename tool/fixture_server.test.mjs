@@ -46,4 +46,14 @@ test('device fixture supports source summaries and preserves supplied PDF eviden
   assert.deepEqual(result.structuredInsights[0].evidence, [evidence]);
   input.availableEvidence = [];
   assert.deepEqual((await complete(`生成观点卡片\n输入数据：${JSON.stringify(input)}`)).structuredInsights, []);
+  const window = { id: 'window-1', sourceId: 'article', sourceVersion: 1, blockId: 'body-1', start: 0, end: 12, text: '保留原文并区分资料与推断' };
+  const proposal = await complete(`本地知识库对话\n输入数据：${JSON.stringify({ protocol: { answerOnly: true }, windows: [window] })}`);
+  assert.ok(proposal.answer?.trim());
+  assert.deepEqual(proposal.evidence, [{
+    sourceId: window.sourceId, sourceVersion: window.sourceVersion,
+    blockId: window.blockId, windowId: window.id,
+    start: window.start, end: window.end, quote: window.text,
+  }]);
+  const noWindows = await complete(`本地知识库对话\n输入数据：${JSON.stringify({ protocol: { answerOnly: true }, windows: [], extraContext: { newAnalysis: '派生摘要不应伪装成原文' } })}`);
+  assert.deepEqual(noWindows.evidence, []);
 });
